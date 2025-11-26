@@ -1,0 +1,53 @@
+# Configuration for Hybrid Offline-Online Scheduler
+
+hardware:
+  device: "mps"  # Metal Performance Shaders for M4 Max
+  use_cpu_fallback: true
+  num_virtual_gpus: 4
+  
+profiling:
+  matrix_sizes: [256, 512, 1024, 2048]
+  iterations: 5
+  save_profiles: true
+  profile_output: "data/profiles/hardware_profile.json"
+
+workload_generation:
+  num_tasks: 1000
+  simulation_tasks: 100
+  rl_training_tasks: 500
+  evaluation_tasks: 500
+  task_size_range: [100, 10000]
+  compute_intensity_range: [0.0, 1.0]
+  memory_range: [10, 5000]
+  arrival_rate: 100  # tasks per second
+  seed: 42
+
+ml_models:
+  model_type: "random_forest"  # or "xgboost"
+  random_forest:
+    n_estimators: 100
+    max_depth: 15
+    min_samples_split: 5
+    n_jobs: -1
+  xgboost:
+    n_estimators: 100
+    max_depth: 7
+    learning_rate: 0.1
+    subsample: 0.8
+  
+  train_test_split: 0.8
+  validation_split: 0.1
+  
+scheduling:
+  batch_size: 50
+  prediction_threshold: 0.8
+  load_balance_weight: 0.3
+  
+evaluation:
+  baseline_strategies: ["round_robin", "random", "greedy"]
+  metrics: ["makespan", "throughput", "load_balance", "utilization"]
+  
+output:
+  results_dir: "data/results/"
+  plots_dir: "data/results/plots/"
+  model_dir: "models/"

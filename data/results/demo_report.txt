@@ -1,0 +1,32 @@
+
+QUICK START DEMO REPORT
+=======================
+
+Hardware Profile:
+  - CPU/GPU Ratio: 0.45
+  - Optimal GPU fraction: 31.0%
+
+Workload Statistics:
+  - Total tasks: 100
+  - Avg task size: 2489
+  - Avg compute intensity: 0.55
+
+ML Model Performance:
+  - Model type: Random Forest
+  - R² score: 0.9998
+  - Features used: size, compute_intensity, memory_required
+
+Scheduling Results:
+  - Tasks scheduled: 100
+  - Avg GPU fraction: 69.2%
+  - Avg CPU fraction: 30.8%
+
+Files Generated:
+  - Workload: data/workload_traces/demo_workload.csv
+  - Decisions: data/results/demo_scheduling_decisions.csv
+  - Report: data/results/demo_report.txt
+
+Next Steps:
+  1. Review the generated CSV files
+  2. Run full main.py for complete pipeline
+  3. Check README.md for detailed documentation
