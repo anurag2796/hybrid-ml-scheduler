@@ -8,3 +8,15 @@ __pycache__/
 debug_ws.py
 data/long_term_history.csv
 logs/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+
+# Alembic
+alembic/versions/*.pyc
