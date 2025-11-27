@@ -2,7 +2,7 @@
 Version information for the Hybrid ML Scheduler.
 """
 
-__version__ = "1.4.0"  # Major.Phase.Patch
+__version__ = "1.5.0"  # Major.Phase.Patch
 
 # Version History:
 # 1.0.0 - Initial release
@@ -10,3 +10,4 @@ __version__ = "1.4.0"  # Major.Phase.Patch
 # 1.2.0 - Phase 2: Data Layer Migration (Repositories, Services, Database integration)
 # 1.3.0 - Phase 3: API Architecture Refactoring (Modular routes, Health checks)
 # 1.4.0 - Phase 4: Performance Optimization (Redis caching, Prometheus metrics)
+# 1.5.0 - Phase 5: Observability & Monitoring (Structured logging, Tracing, Error tracking)

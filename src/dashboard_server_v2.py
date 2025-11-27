@@ -12,8 +12,10 @@ from loguru import logger
 from backend.core.config import settings
 from backend.core.database import init_db, close_db
 from backend.core.redis import redis_client
-from backend.api.routes import health, websocket, simulation, metrics
+from backend.api.routes import health, websocket, simulation, metrics, observability
 from backend.__version__ import __version__
+from backend.middleware.observability import ObservabilityMiddleware, ErrorTrackingMiddleware
+from backend.services.logging_service import setup_logging
 from src.simulation_engine import ContinuousSimulation
 
 
@@ -26,6 +28,10 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup
     logger.info("🚀 Starting Hybrid ML Scheduler API...")
+    
+    # Setup structured logging
+    setup_logging(environment=settings.environment)
+    logger.info(f"✅ Logging configured for {settings.environment} environment")
     
     # Initialize database
     try:
@@ -83,11 +89,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Observability middleware
+app.add_middleware(ObservabilityMiddleware)
+app.add_middleware(ErrorTrackingMiddleware)
+
 # Include routers
 app.include_router(health.router)
 app.include_router(websocket.router)
 app.include_router(simulation.router)
 app.include_router(metrics.router)
+app.include_router(observability.router)
 
 
 @app.get("/")
