@@ -15,6 +15,8 @@ from backend.core.redis import redis_client
 from backend.api.routes import health, websocket, simulation, metrics, observability
 from backend.__version__ import __version__
 from backend.middleware.observability import ObservabilityMiddleware, ErrorTrackingMiddleware
+from backend.middleware.rate_limit import RateLimitMiddleware
+from backend.middleware.security import SecurityHeadersMiddleware
 from backend.services.logging_service import setup_logging
 from src.simulation_engine import ContinuousSimulation
 
@@ -88,6 +90,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Security middleware (applied first)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=100)
 
 # Observability middleware
 app.add_middleware(ObservabilityMiddleware)
