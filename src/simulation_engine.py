@@ -353,9 +353,10 @@ class ContinuousSimulation:
             self.metrics[name]['tasks'] += 1
 
     def _persist_data(self, task: Task, oracle_result: Dict):
-        """Append task features and oracle's optimal decision to training history buffer.
+        """Append task features and oracle's optimal decision to training history.
         
-        Data is buffered and written to disk in batches to reduce I/O overhead.
+        Now persists to both PostgreSQL database (primary) and CSV (backup).
+        Data is buffered and written in batches to optimize performance.
         
         Args:
             task (Task): The executed task
@@ -375,17 +376,36 @@ class ContinuousSimulation:
             self._flush_batch()
 
     def _flush_batch(self):
-        """Write buffered data to CSV."""
+        """Write buffered data to both database and CSV.
+        
+        Primary storage is PostgreSQL database with CSV as backup.
+        Uses async background task for database writes to avoid blocking.
+        """
         if not self.batch_buffer:
             return
             
+        buffer_copy = self.batch_buffer.copy()
+        self.batch_buffer = []
+        
+        # 1. Save to database (async, non-blocking)
         try:
-            df = pd.DataFrame(self.batch_buffer)
-            df.to_csv(self.history_file, mode='a', header=False, index=False)
-            self.batch_buffer = []
-            logger.debug(f"Flushed batch to {self.history_file}")
+            from backend.services import SimulationDataService
+            # Create async task to save to database
+            asyncio.create_task(
+                SimulationDataService.save_training_data_batch(buffer_copy)
+            )
+            logger.debug(f"Queued {len(buffer_copy)} records for database save")
         except Exception as e:
-            logger.error(f"Failed to flush batch: {e}")
+            logger.error(f"Failed to queue database save: {e}")
+        
+        # 2. Save to CSV as backup
+        try:
+            df = pd.DataFrame(buffer_copy)
+            df.to_csv(self.history_file, mode='a', header=False, index=False)
+            logger.debug(f"Flushed {len(buffer_copy)} records to CSV backup")
+        except Exception as e:
+            logger.error(f"Failed to flush CSV batch: {e}")
+
 
     async def _retrain_model(self):
         """Retrain the hybrid ML model using accumulated history data.
@@ -393,31 +413,47 @@ class ContinuousSimulation:
         Uses a sliding window approach (last 1000 samples) to ensure training
         speed remains constant and the model adapts to recent trends.
         
+        Reads from PostgreSQL database (primary) with CSV fallback.
+        
         Raises:
             Exception: Logs error if retraining fails but doesn't crash simulation
         """
         logger.info("Retraining Hybrid ML Model...")
         try:
-            # Load history (Sliding Window Optimization)
-            # Only read the last 1000 lines + header. 
-            # Since reading last N lines of CSV is tricky without reading all, 
-            # we'll read all but keep only tail for training.
-            # Ideally, we'd use a database or a fixed-size buffer file.
+            df = None
             
-            # For now, read all but slice in memory (assuming file fits in RAM)
-            # Improvement: Use chunksize if file is huge
-            df = pd.read_csv(self.history_file)
+            # Try database first
+            try:
+                from backend.services import SimulationDataService
+                data = await SimulationDataService.get_latest_training_data(limit=1000)
+                if data:
+                    df = pd.DataFrame(data)
+                    logger.debug(f"Loaded {len(df)} records from database for retraining")
+            except Exception as e:
+                logger.warning(f"Failed to load from database: {e}, falling back to CSV")
+            
+            # Fallback to CSV if database fails or is empty  
+            if df is None or len(df) == 0:
+                if self.history_file.exists():
+                    df = pd.read_csv(self.history_file)
+                    logger.debug(f"Loaded {len(df)} records from CSV for retraining")
+                    
+                    # Keep only last 1000 samples
+                    if len(df) > 1000:
+                        df = df.tail(1000)
+                else:
+                    logger.warning("No training data available (neither database nor CSV)")
+                    return
             
             if len(df) < 50:
-                return # Not enough data
+                logger.info(f"Not enough data for retraining ({len(df)} samples, need 50)")
+                return
             
-            # Keep only last 1000 samples for training
-            if len(df) > 1000:
-                df = df.tail(1000)
-            
-            # Prepare features
-            df['memory_per_size'] = df['memory_required'] / (df['size'] + 1)
-            df['compute_to_memory'] = df['compute_intensity'] / (df['memory_required'] + 1)
+            # Prepare features (if not already computed from database)
+            if 'memory_per_size' not in df.columns:
+                df['memory_per_size'] = df['memory_required'] / (df['size'] + 1)
+            if 'compute_to_memory' not in df.columns:
+                df['compute_to_memory'] = df['compute_intensity'] / (df['memory_required'] + 1)
             
             X = df[['size', 'compute_intensity', 'memory_required', 'memory_per_size', 'compute_to_memory']]
             y = df['optimal_gpu_fraction']
