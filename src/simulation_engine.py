@@ -1,7 +1,26 @@
-"""
-Continuous Simulation Engine
-Runs multiple schedulers in parallel, persists data, and handles online retraining.
-"""
+"""Continuous Simulation Engine for Hybrid ML Scheduler.
+
+This module implements a live simulation environment that continuously generates
+tasks, schedules them across multiple competing strategies, collects performance
+metrics, and broadcasts results to a dashboard via WebSocket.
+
+Key Features:
+    - Real-time task generation and scheduling simulation
+    - Multiple scheduler comparison (Round Robin, Random, Greedy, Hybrid ML, RL Agent, Oracle)
+    - Online model retraining based on accumulated data
+    - WebSocket broadcasting for live dashboard updates
+    - Performance metrics persistence for analysis
+
+Typical Usage:
+    ```python
+    async def broadcast(msg: dict):
+        # Your WebSocket broadcast logic
+        pass
+    
+    simulation = ContinuousSimulation(broadcast_callback=broadcast)
+    await simulation.start()
+    ```
+"
 
 import asyncio
 import time
@@ -20,7 +39,35 @@ from src.dqn_scheduler import DQNScheduler
 from src.ml_models import RandomForestPredictor
 
 class ContinuousSimulation:
+    """Orchestrates continuous simulation of multiple scheduling strategies.
+    
+    This class manages the entire simulation lifecycle including task generation,
+    parallel scheduler execution, metrics collection, model retraining, and
+    real-time result broadcasting.
+    
+    Attributes:
+        broadcast_callback (callable): Async function to broadcast simulation updates
+        is_running (bool): Flag indicating if simulation is active
+        is_paused (bool): Flag indicating if simulation is paused
+        num_gpus (int): Number of GPUs in the virtual cluster
+        retrain_interval (int): Number of tasks between model retraining cycles
+        tasks_processed (int): Counter for tasks processed since start
+        history_file (Path): Path to CSV file storing training history
+        simulators (dict): Dictionary mapping scheduler names to VirtualMultiGPU instances
+        trainer (OfflineTrainer): ML model trainer for hybrid scheduler
+        hybrid_scheduler (OnlineScheduler): ML-based scheduling policy
+        rl_scheduler (DQNScheduler): Reinforcement learning-based scheduler
+        metrics (dict): Accumulated performance metrics per scheduler
+    """
+    
     def __init__(self, broadcast_callback):
+        """Initialize simulation with all schedulers and components.
+        
+        Args:
+            broadcast_callback (callable): Async function that accepts a dict message
+                and broadcasts it to connected clients. Should have signature:
+                async def callback(message: dict) -> None
+        """
         self.broadcast_callback = broadcast_callback
         self.is_running = False
         self.is_paused = False
@@ -65,19 +112,43 @@ class ContinuousSimulation:
         self.metrics = {k: {'total_time': 0.0, 'tasks': 0} for k in self.simulators.keys()}
 
     def _initial_pretrain(self):
-        """Quick pre-train to ensure model is valid"""
+        """Pre-train the hybrid ML model with dummy data to initialize weights.
+        
+        Generates a small synthetic workload and trains the model with mock
+        optimal GPU fractions to ensure the model is callable before the
+        first real retraining cycle.
+        
+        Note:
+            This is a bootstrapping step. The model will be properly trained
+            once sufficient real data is collected.
+        """
         wg = WorkloadGenerator()
         tasks = wg.generate_workload(num_tasks=10)
         self.trainer.prepare_data(wg)
         # Mock optimal fractions for dummy data
         self.trainer.training_data['optimal_gpu_fraction'] = [0.5] * 10
         
-        X = self.trainer.training_data[['task_size', 'compute_intensity', 'memory_required', 'memory_per_size', 'compute_to_memory']]
+        X = self.trainer.training_data[['size', 'compute_intensity', 'memory_required', 'memory_per_size', 'compute_to_memory']]
         y = self.trainer.training_data['optimal_gpu_fraction']
         self.trainer.train(X, y)
 
     async def start(self):
-        """Start the simulation loop"""
+        """Start the continuous simulation loop.
+        
+        This is the main simulation loop that:
+        1. Generates new tasks at regular intervals (1.5s)
+        2. Runs all schedulers on each task in parallel
+        3. Updates metrics and broadcasts results
+        4. Persists oracle results for training
+        5. Triggers model retraining every retrain_interval tasks
+        
+        The loop runs until stop() is called. Can be paused/resumed via
+        pause() and resume() methods.
+        
+        Raises:
+            Exception: Any errors during scheduler execution are logged but
+                don't stop the simulation.
+        """
         self.is_running = True
         logger.info("Simulation Engine Started")
         
@@ -115,23 +186,44 @@ class ContinuousSimulation:
             await asyncio.sleep(1.5) # Slow enough to read
 
     def stop(self):
+        """Stop the simulation loop gracefully."""
         self.is_running = False
 
     def pause(self):
+        """Pause the simulation temporarily without stopping it."""
         self.is_paused = True
 
     def resume(self):
+        """Resume a paused simulation."""
         self.is_paused = False
 
     def _generate_task(self) -> Task:
-        """Generate a single random task"""
+        """Generate a single random task for scheduling.
+        
+        Returns:
+            Task: A randomly generated task with size, compute intensity,
+                and memory requirements based on configured distributions.
+        """
         # Use WorkloadGenerator logic but just one task
         wg = WorkloadGenerator()
         # We use the stream generator to get just one
-        return next(wg.generate_workload_stream(num_tasks=1, arrival_rate=0.5))
+        return next(wg.generate_workload_stream(num_tasks=1, arrival_rate=2.0))
 
     def _calculate_metrics(self, result: Dict) -> Dict:
-        """Calculate Energy (Joules) and Cost ($)"""
+        """Calculate energy consumption and execution cost from scheduler result.
+        
+        Uses a simple power model where GPUs consume 50W and CPUs consume 30W.
+        Cost is calculated based on $0.15 per kWh.
+        
+        Args:
+            result (Dict): Scheduler result containing 'actual_time' and 'gpu_fraction'
+        
+        Returns:
+            Dict: Dictionary with keys:
+                - time (float): Execution time in seconds
+                - energy (float): Energy consumption in Joules
+                - cost (float): Execution cost in dollars
+        """
         time = result['actual_time']
         gpu_frac = result['gpu_fraction']
         
@@ -150,7 +242,27 @@ class ContinuousSimulation:
         }
 
     def _run_all_schedulers(self, task: Task) -> Dict:
-        """Run the task on all schedulers and return results"""
+        """Execute a task across all scheduling strategies and collect results.
+        
+        This method runs the same task through six different schedulers:
+        1. Round Robin: Alternates between GPU and CPU
+        2. Random: Random GPU fraction selection
+        3. Greedy: Uses compute intensity as GPU fraction
+        4. Hybrid ML: ML model prediction based on task features
+        5. RL Agent: Reinforcement learning-based decision
+        6. Oracle: Grid search for optimal GPU fraction (ground truth)
+        
+        Args:
+            task (Task): The task to schedule
+        
+        Returns:
+            Dict: Nested dictionary with scheduler names as keys, each containing:
+                - gpu_fraction (float): Allocated GPU fraction
+                - actual_time (float): Execution time
+                - time (float): Same as actual_time
+                - energy (float): Energy consumption in Joules
+                - cost (float): Execution cost in dollars
+        """
         results = {}
         
         # --- 1. Round Robin ---
@@ -170,7 +282,7 @@ class ContinuousSimulation:
         
         # --- 4. Hybrid ML ---
         features = pd.DataFrame([{
-            'task_size': task.size,
+            'size': task.size,
             'compute_intensity': task.compute_intensity,
             'memory_required': task.memory_required,
             'memory_per_size': task.memory_required / (task.size + 1),
@@ -202,13 +314,26 @@ class ContinuousSimulation:
         return results
 
     def _update_metrics(self, results):
+        """Accumulate execution time and task counts for each scheduler.
+        
+        Args:
+            results (Dict): Dictionary of scheduler results from _run_all_schedulers
+        """
         for name, res in results.items():
             self.metrics[name]['total_time'] += res['time']
             # We can track total energy/cost too if needed
             self.metrics[name]['tasks'] += 1
 
     def _persist_data(self, task: Task, oracle_result: Dict):
-        """Save task features and optimal label"""
+        """Append task features and oracle's optimal decision to training history.
+        
+        This data is used for periodic model retraining to improve the hybrid
+        scheduler's predictions over time.
+        
+        Args:
+            task (Task): The executed task
+            oracle_result (Dict): Oracle scheduler result containing optimal GPU fraction
+        """
         row = {
             'task_id': task.task_id,
             'size': task.size,
@@ -220,7 +345,15 @@ class ContinuousSimulation:
         pd.DataFrame([row]).to_csv(self.history_file, mode='a', header=False, index=False)
 
     async def _retrain_model(self):
-        """Retrain the Hybrid ML model using accumulated history"""
+        """Retrain the hybrid ML model using accumulated历史 data.
+        
+        Loads all historical task data from CSV, performs feature engineering,
+        and retrains the RandomForest model. Requires minimum 50 samples.
+        Broadcasts a notification to the frontend upon completion.
+        
+        Raises:
+            Exception: Logs error if retraining fails but doesn't crash simulation
+        """
         logger.info("Retraining Hybrid ML Model...")
         try:
             # Load history
@@ -232,7 +365,7 @@ class ContinuousSimulation:
             df['memory_per_size'] = df['memory_required'] / (df['size'] + 1)
             df['compute_to_memory'] = df['compute_intensity'] / (df['memory_required'] + 1)
             
-            X = df[['task_size', 'compute_intensity', 'memory_required', 'memory_per_size', 'compute_to_memory']]
+            X = df[['size', 'compute_intensity', 'memory_required', 'memory_per_size', 'compute_to_memory']]
             y = df['optimal_gpu_fraction']
             
             # Train
@@ -253,7 +386,19 @@ class ContinuousSimulation:
             logger.error(f"Retraining failed: {e}")
 
     async def _broadcast_state(self, task: Task, results: Dict):
-        """Send state to dashboard"""
+        """Broadcast current simulation state to all connected dashboard clients.
+        
+        Constructs a comprehensive message containing:
+        - Current task information
+        - Scheduler performance comparison
+        - Latest individual scheduler results (time/energy/cost)
+        - Mock GPU utilization metrics
+        - Scheduling decision details
+        
+        Args:
+            task (Task): The task that was just scheduled
+            results (Dict): Results from all schedulers for this task
+        """
         # Calculate averages for chart
         comparison = []
         for name, metrics in self.metrics.items():

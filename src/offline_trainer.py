@@ -46,7 +46,7 @@ class OfflineTrainer:
         features_list = []
         for task in tasks:
             features_list.append({
-                'task_size': task.size,
+                'size': task.size,
                 'compute_intensity': task.compute_intensity,
                 'memory_required': task.memory_required,
                 'duration_estimate': task.duration_estimate,
@@ -161,7 +161,7 @@ class OfflineTrainer:
         df = self.prepare_data(workload_generator)
         
         # Step 2: Extract features and target
-        feature_cols = ['task_size', 'compute_intensity', 'memory_required', 
+        feature_cols = ['size', 'compute_intensity', 'memory_required', 
                        'memory_per_size', 'compute_to_memory']
         X = df[feature_cols]
         y = df['optimal_gpu_fraction']
