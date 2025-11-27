@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+.idea/
+.vscode/
+*.backup
+debug_ws.py
+data/long_term_history.csv
+logs/

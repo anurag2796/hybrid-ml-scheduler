@@ -5,8 +5,9 @@ import {
   BarChart, Bar, Cell, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   ScatterChart, Scatter, PieChart, Pie, Legend, LineChart, Line
 } from 'recharts';
-import { Play, Pause, Activity, Cpu, Zap, Layers, Terminal, Wifi, BarChart2, Database, PieChart as PieIcon, Target, History, Trash2, LayoutDashboard, Server, Brain, Shuffle, MousePointer2, GripHorizontal } from 'lucide-react';
+import { Play, Pause, Activity, Cpu, Zap, Layers, Terminal, Wifi, BarChart2, Database, PieChart as PieIcon, Target, History, Trash2, LayoutDashboard, Server, Brain, Shuffle, MousePointer2, GripHorizontal, TrendingUp } from 'lucide-react';
 import { Responsive, WidthProvider } from 'react-grid-layout';
+import EnhancedVisualizationsDemo from './components/EnhancedVisualizationsDemo';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
@@ -21,7 +22,7 @@ const Dashboard = () => {
   const [latestResults, setLatestResults] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [activeView, setActiveView] = useState('global'); // 'global', 'history', or scheduler_id
+  const [activeView, setActiveView] = useState('global'); // 'global', 'history', 'enhanced', or scheduler_id
   const [notification, setNotification] = useState(null);
 
   const wsRef = useRef(null);
@@ -97,10 +98,13 @@ const Dashboard = () => {
 
   // Fetch Full History when view is history
   useEffect(() => {
-    if (activeView === 'history') {
+    if (activeView === 'history' || activeView === 'enhanced') {
       fetch('http://localhost:8000/api/full_history')
         .then(res => res.json())
-        .then(data => setFullHistory(data))
+        .then(data => {
+          console.log('Fetched full history, length:', data.length);
+          setFullHistory(data);
+        })
         .catch(err => console.error("Failed to fetch full history", err));
     }
   }, [activeView]);
@@ -287,6 +291,17 @@ const Dashboard = () => {
       );
     }
 
+    if (activeView === 'enhanced') {
+      return (
+        <EnhancedVisualizationsDemo
+          history={history}
+          fullHistory={fullHistory}
+          comparisonData={comparisonData}
+          latestResults={latestResults}
+        />
+      );
+    }
+
     // Scheduler View (Grid Layout)
     return (
       <ResponsiveGridLayout
@@ -446,6 +461,13 @@ const Dashboard = () => {
             <History size={18} className="text-purple-400" />
             <span className="text-sm font-medium">Historical Analysis</span>
           </button>
+          <button
+            onClick={() => setActiveView('enhanced')}
+            className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all ${activeView === 'enhanced' ? 'bg-white/10 border border-white/10 text-white shadow-lg' : 'text-gray-400 hover:bg-white/5'}`}
+          >
+            <TrendingUp size={18} className="text-cyan-400" />
+            <span className="text-sm font-medium">Enhanced Analytics</span>
+          </button>
 
           <div className="text-xs font-semibold text-gray-500 px-2 py-2 mt-4">SCHEDULERS</div>
           <div className="space-y-1">
@@ -493,7 +515,8 @@ const Dashboard = () => {
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               {activeView === 'global' ? 'Global Comparison' :
                 activeView === 'history' ? 'Historical Analysis' :
-                  SCHEDULERS.find(s => s.id === activeView)?.name}
+                  activeView === 'enhanced' ? 'Enhanced Analytics' :
+                    SCHEDULERS.find(s => s.id === activeView)?.name}
             </h2>
           </div>
         </header>

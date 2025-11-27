@@ -20,7 +20,7 @@ Typical Usage:
     simulation = ContinuousSimulation(broadcast_callback=broadcast)
     await simulation.start()
     ```
-"
+"""
 
 import asyncio
 import time
@@ -78,6 +78,9 @@ class ContinuousSimulation:
         self.tasks_processed = 0
         self.history_file = Path("data/long_term_history.csv")
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Initialize Workload Generator (Persistent)
+        self.workload_generator = WorkloadGenerator()
         
         # Initialize Schedulers / Simulators
         # We need separate simulators for each strategy to maintain independent state
@@ -204,10 +207,9 @@ class ContinuousSimulation:
             Task: A randomly generated task with size, compute intensity,
                 and memory requirements based on configured distributions.
         """
-        # Use WorkloadGenerator logic but just one task
-        wg = WorkloadGenerator()
+        # Use the persistent generator to get the next task
         # We use the stream generator to get just one
-        return next(wg.generate_workload_stream(num_tasks=1, arrival_rate=2.0))
+        return next(self.workload_generator.generate_workload_stream(num_tasks=1, arrival_rate=2.0))
 
     def _calculate_metrics(self, result: Dict) -> Dict:
         """Calculate energy consumption and execution cost from scheduler result.
