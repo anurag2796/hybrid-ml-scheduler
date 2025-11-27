@@ -54,14 +54,19 @@ const Dashboard = () => {
       const ws = new WebSocket('ws://localhost:8000/ws');
       wsRef.current = ws;
 
-      ws.onopen = () => setIsConnected(true);
+      ws.onopen = () => {
+        console.log('✅ WebSocket connected');
+        setIsConnected(true);
+      };
       ws.onclose = () => {
+        console.log('❌ WebSocket disconnected');
         setIsConnected(false);
         setTimeout(connect, 3000);
       };
 
       ws.onmessage = (event) => {
         const message = JSON.parse(event.data);
+        console.log('📨 WebSocket message received:', message.type);
 
         if (message.type === 'notification') {
           setNotification(message.message);
@@ -70,8 +75,15 @@ const Dashboard = () => {
         }
 
         if (message.type === 'simulation_update') {
+          console.log('✅ Simulation update - latestResults:', message.latest_results ? 'YES' : 'NO');
           const newData = transformData(message);
-          setData(prev => [...prev, newData].slice(-50));
+          if (newData) {
+            setData(prev => {
+              const updated = [...prev, newData].slice(-50);
+              console.log('📊 Data array length:', updated.length);
+              return updated;
+            });
+          }
           setHistory(prev => [message, ...prev].slice(0, 50));
           setComparisonData(message.comparison);
           setCurrentTask(message.task);
@@ -112,16 +124,27 @@ const Dashboard = () => {
   };
 
   const transformData = (message) => {
-    const util = message.utilization;
-    return {
-      time: new Date().toLocaleTimeString(),
-      avgUtil: (util.average_utilization * 100).toFixed(1),
-      gpu0: util.gpu_0.utilization * 100,
-      gpu1: util.gpu_1.utilization * 100,
-      gpu2: util.gpu_2.utilization * 100,
-      gpu3: util.gpu_3.utilization * 100,
-      raw: message
-    };
+    try {
+      const util = message.utilization;
+      if (!util) {
+        console.error('❌ No utilization data in message');
+        return null;
+      }
+      const transformed = {
+        time: new Date().toLocaleTimeString(),
+        avgUtil: (util.average_utilization * 100).toFixed(1),
+        gpu0: util.gpu_0.utilization * 100,
+        gpu1: util.gpu_1.utilization * 100,
+        gpu2: util.gpu_2.utilization * 100,
+        gpu3: util.gpu_3.utilization * 100,
+        raw: message
+      };
+      console.log('✅ Transformed data:', transformed);
+      return transformed;
+    } catch (error) {
+      console.error('❌ Error in transformData:', error);
+      return null;
+    }
   };
 
   // --- Derived Metrics for Selected Scheduler ---
@@ -304,7 +327,7 @@ const Dashboard = () => {
             </h3>
             <GripHorizontal className="text-gray-600" size={14} />
           </div>
-          <div className="flex-1 min-h-0 p-4 relative">
+          <div className="p-4 relative" style={{ height: '250px' }}>
             {data.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={data}>
@@ -332,7 +355,7 @@ const Dashboard = () => {
             </h3>
             <GripHorizontal className="text-gray-600" size={14} />
           </div>
-          <div className="flex-1 min-h-0 p-2 relative">
+          <div className="p-2 relative" style={{ height: '250px' }}>
             {latestResults ? (
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart cx="50%" cy="50%" outerRadius="65%" data={radarData}>
@@ -356,7 +379,7 @@ const Dashboard = () => {
             </h3>
             <GripHorizontal className="text-gray-600" size={14} />
           </div>
-          <div className="flex-1 min-h-0 p-2 relative">
+          <div className="p-2 relative" style={{ height: '200px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={getSplitData()} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={5} dataKey="value">
