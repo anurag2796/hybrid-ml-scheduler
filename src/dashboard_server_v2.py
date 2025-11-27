@@ -12,7 +12,8 @@ from loguru import logger
 from backend.core.config import settings
 from backend.core.database import init_db, close_db
 from backend.core.redis import redis_client
-from backend.api.routes import health, websocket, simulation
+from backend.api.routes import health, websocket, simulation, metrics
+from backend.__version__ import __version__
 from src.simulation_engine import ContinuousSimulation
 
 
@@ -69,7 +70,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Hybrid ML Scheduler API",
     description="Real-time GPU scheduling simulation with ML optimization",
-    version="1.0.0",
+    version=__version__,
     lifespan=lifespan
 )
 
@@ -86,6 +87,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(websocket.router)
 app.include_router(simulation.router)
+app.include_router(metrics.router)
 
 
 @app.get("/")
@@ -93,7 +95,7 @@ async def root():
     """Root endpoint."""
     return {
         "message": "Hybrid ML Scheduler API",
-        "version": "1.0.0",
+        "version": __version__,
         "docs": "/docs",
         "health": "/health"
     }

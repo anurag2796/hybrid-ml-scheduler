@@ -8,6 +8,7 @@ from loguru import logger
 from backend.core.database import engine
 from backend.core.redis import redis_client
 from backend.core.config import settings
+from backend.__version__ import __version__
 
 router = APIRouter(prefix="/health", tags=["health"])
 
@@ -18,7 +19,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0"
+        "version": __version__
     }
 
 
@@ -86,7 +87,7 @@ async def system_info():
     """Get system information."""
     return {
         "app_name": "Hybrid ML Scheduler",
-        "version": "1.0.0",
+        "version": __version__,
         "environment": settings.environment,
         "debug": settings.debug,
         "database": {

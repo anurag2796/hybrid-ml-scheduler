@@ -65,19 +65,32 @@ class SimulationDataService:
         """
         Get the latest training data for model retraining.
         
+        Uses caching to avoid repeated database queries.
+        Cache TTL: 30 seconds
+        
         Args:
             limit: Maximum number of records to retrieve
             
         Returns:
             List of training data dictionaries
         """
+        from backend.services.cache_service import cache_service
+        
+        # Try cache first
+        cache_key = f"training_data_latest_{limit}"
+        cached_data = await cache_service.get("training_data", cache_key)
+        if cached_data is not None:
+            logger.debug(f"Returning cached training data ({len(cached_data)} records)")
+            return cached_data
+        
+        # Cache miss - fetch from database
         try:
             async with get_db_context() as db:
                 repo = TrainingDataRepository(db)
                 records = await repo.get_latest(limit=limit)
                 
-                # Convert to list of dicts for compatibility with existing code
-                return [
+                # Convert to list of dicts
+                data = [
                     {
                         'size': r.size,
                         'compute_intensity': r.compute_intensity,
@@ -89,6 +102,12 @@ class SimulationDataService:
                     }
                     for r in records
                 ]
+                
+                # Cache for 30 seconds
+                await cache_service.set("training_data", cache_key, data, ttl=30)
+                logger.debug(f"Cached {len(data)} training records")
+                
+                return data
         except Exception as e:
             logger.error(f"Failed to get training data: {e}")
             return []
@@ -159,16 +178,35 @@ class SimulationDataService:
         """
         Get aggregate statistics for a scheduler.
         
+        Uses caching to reduce database load.
+        Cache TTL: 10 seconds
+        
         Args:
             scheduler_name: Name of the scheduler
             
         Returns:
             Dictionary with aggregate stats
         """
+        from backend.services.cache_service import cache_service
+        
+        # Try cache first
+        cache_key = f"scheduler_stats_{scheduler_name}"
+        cached_stats = await cache_service.get("scheduler_stats", cache_key)
+        if cached_stats is not None:
+            logger.debug(f"Returning cached stats for {scheduler_name}")
+            return cached_stats
+        
+        # Cache miss - fetch from database
         try:
             async with get_db_context() as db:
                 repo = SchedulerResultRepository(db)
-                return await repo.get_scheduler_stats(scheduler_name)
+                stats = await repo.get_scheduler_stats(scheduler_name)
+                
+                # Cache for 10 seconds
+                await cache_service.set("scheduler_stats", cache_key, stats, ttl=10)
+                logger.debug(f"Cached stats for {scheduler_name}")
+                
+                return stats
         except Exception as e:
             logger.error(f"Failed to get scheduler stats: {e}")
             return {}
