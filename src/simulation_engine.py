@@ -25,11 +25,13 @@ Typical Usage:
 import asyncio
 import time
 import random
+import yaml
 import pandas as pd
 import numpy as np
 from pathlib import Path
 from typing import Dict, List
 from loguru import logger
+from concurrent.futures import ThreadPoolExecutor
 
 from src.workload_generator import WorkloadGenerator, Task
 from src.simulator import VirtualMultiGPU
@@ -72,15 +74,23 @@ class ContinuousSimulation:
         self.is_running = False
         self.is_paused = False
         
+        # Load Configuration
+        self.config = self._load_config()
+        
         # Configuration
-        self.num_gpus = 4
+        self.num_gpus = self.config['hardware'].get('num_virtual_gpus', 4)
         self.retrain_interval = 50
         self.tasks_processed = 0
         self.history_file = Path("data/long_term_history.csv")
         self.history_file.parent.mkdir(parents=True, exist_ok=True)
         
+        # Performance Optimizations
+        self.executor = ThreadPoolExecutor(max_workers=4)
+        self.batch_buffer = []
+        self.batch_size = 50 # Write to disk every 50 tasks
+        
         # Initialize Workload Generator (Persistent)
-        self.workload_generator = WorkloadGenerator()
+        self.workload_generator = WorkloadGenerator(seed=self.config['workload_generation'].get('seed', 42))
         
         # Initialize Schedulers / Simulators
         # We need separate simulators for each strategy to maintain independent state
@@ -113,6 +123,15 @@ class ContinuousSimulation:
         
         # Metrics Storage
         self.metrics = {k: {'total_time': 0.0, 'tasks': 0} for k in self.simulators.keys()}
+
+    def _load_config(self) -> Dict:
+        """Load configuration from yaml file."""
+        try:
+            with open("config.yaml", "r") as f:
+                return yaml.safe_load(f)
+        except Exception as e:
+            logger.warning(f"Failed to load config.yaml, using defaults: {e}")
+            return {'hardware': {}, 'workload_generation': {}}
 
     def _initial_pretrain(self):
         """Pre-train the hybrid ML model with dummy data to initialize weights.
@@ -162,6 +181,8 @@ class ContinuousSimulation:
                 'optimal_gpu_fraction', 'optimal_time'
             ]).to_csv(self.history_file, index=False)
             
+        loop = asyncio.get_running_loop()
+
         while self.is_running:
             if self.is_paused:
                 await asyncio.sleep(0.5)
@@ -170,19 +191,22 @@ class ContinuousSimulation:
             # 1. Generate Task
             task = self._generate_task()
             
-            # 2. Run on All Schedulers
-            results = self._run_all_schedulers(task)
+            # 2. Run on All Schedulers (Offload to ThreadPool)
+            # This prevents blocking the async loop during heavy computation
+            results = await loop.run_in_executor(self.executor, self._run_all_schedulers, task)
             
             # 3. Update Metrics & Broadcast
             self._update_metrics(results)
             await self._broadcast_state(task, results)
             
-            # 4. Persist Data (Oracle Result)
+            # 4. Persist Data (Oracle Result) - Buffered
             self._persist_data(task, results['oracle'])
             
             # 5. Retrain if needed
             self.tasks_processed += 1
             if self.tasks_processed % self.retrain_interval == 0:
+                # Flush buffer before retraining to ensure latest data is available
+                self._flush_batch()
                 await self._retrain_model()
             
             # Delay for visual pacing
@@ -191,6 +215,8 @@ class ContinuousSimulation:
     def stop(self):
         """Stop the simulation loop gracefully."""
         self.is_running = False
+        self._flush_batch() # Ensure pending data is saved
+        self.executor.shutdown(wait=False)
 
     def pause(self):
         """Pause the simulation temporarily without stopping it."""
@@ -327,10 +353,9 @@ class ContinuousSimulation:
             self.metrics[name]['tasks'] += 1
 
     def _persist_data(self, task: Task, oracle_result: Dict):
-        """Append task features and oracle's optimal decision to training history.
+        """Append task features and oracle's optimal decision to training history buffer.
         
-        This data is used for periodic model retraining to improve the hybrid
-        scheduler's predictions over time.
+        Data is buffered and written to disk in batches to reduce I/O overhead.
         
         Args:
             task (Task): The executed task
@@ -344,24 +369,51 @@ class ContinuousSimulation:
             'optimal_gpu_fraction': oracle_result['gpu_fraction'],
             'optimal_time': oracle_result['actual_time']
         }
-        pd.DataFrame([row]).to_csv(self.history_file, mode='a', header=False, index=False)
+        self.batch_buffer.append(row)
+        
+        if len(self.batch_buffer) >= self.batch_size:
+            self._flush_batch()
+
+    def _flush_batch(self):
+        """Write buffered data to CSV."""
+        if not self.batch_buffer:
+            return
+            
+        try:
+            df = pd.DataFrame(self.batch_buffer)
+            df.to_csv(self.history_file, mode='a', header=False, index=False)
+            self.batch_buffer = []
+            logger.debug(f"Flushed batch to {self.history_file}")
+        except Exception as e:
+            logger.error(f"Failed to flush batch: {e}")
 
     async def _retrain_model(self):
-        """Retrain the hybrid ML model using accumulated历史 data.
+        """Retrain the hybrid ML model using accumulated history data.
         
-        Loads all historical task data from CSV, performs feature engineering,
-        and retrains the RandomForest model. Requires minimum 50 samples.
-        Broadcasts a notification to the frontend upon completion.
+        Uses a sliding window approach (last 1000 samples) to ensure training
+        speed remains constant and the model adapts to recent trends.
         
         Raises:
             Exception: Logs error if retraining fails but doesn't crash simulation
         """
         logger.info("Retraining Hybrid ML Model...")
         try:
-            # Load history
+            # Load history (Sliding Window Optimization)
+            # Only read the last 1000 lines + header. 
+            # Since reading last N lines of CSV is tricky without reading all, 
+            # we'll read all but keep only tail for training.
+            # Ideally, we'd use a database or a fixed-size buffer file.
+            
+            # For now, read all but slice in memory (assuming file fits in RAM)
+            # Improvement: Use chunksize if file is huge
             df = pd.read_csv(self.history_file)
+            
             if len(df) < 50:
                 return # Not enough data
+            
+            # Keep only last 1000 samples for training
+            if len(df) > 1000:
+                df = df.tail(1000)
             
             # Prepare features
             df['memory_per_size'] = df['memory_required'] / (df['size'] + 1)
@@ -370,8 +422,9 @@ class ContinuousSimulation:
             X = df[['size', 'compute_intensity', 'memory_required', 'memory_per_size', 'compute_to_memory']]
             y = df['optimal_gpu_fraction']
             
-            # Train
-            self.trainer.train(X, y)
+            # Train (in executor to avoid blocking)
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(self.executor, self.trainer.train, X, y)
             
             # Update scheduler's model reference
             self.hybrid_scheduler.model = self.trainer.model

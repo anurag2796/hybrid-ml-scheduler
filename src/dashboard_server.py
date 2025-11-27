@@ -92,12 +92,17 @@ async def get_history():
     return history
 
 @app.get("/api/full_history")
-async def get_full_history():
-    """Read full history from CSV"""
+async def get_full_history(limit: int = 1000):
+    """Read full history from CSV (limited to last N rows)"""
     try:
         if simulation.history_file.exists():
             import pandas as pd
+            # Read all for now, then slice. 
+            # Optimization: Use tail if file is huge, but pandas read_csv doesn't support tail directly without reading.
+            # For true scalability, we'd use a DB.
             df = pd.read_csv(simulation.history_file)
+            if len(df) > limit:
+                df = df.tail(limit)
             return df.to_dict(orient='records')
         return []
     except Exception as e:

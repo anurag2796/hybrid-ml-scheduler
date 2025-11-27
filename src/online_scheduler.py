@@ -58,7 +58,7 @@ class OnlineScheduler:
         """Use ML model to predict best placement"""
         # Prepare features for model
         features = pd.DataFrame([{
-            'task_size': task.size,
+            'size': task.size,
             'compute_intensity': task.compute_intensity,
             'memory_required': task.memory_required,
             'memory_per_size': task.memory_required / (task.size + 1),

@@ -37,7 +37,7 @@ class TestOfflineTrainer:
         
         assert isinstance(df, pd.DataFrame)
         assert len(df) == 2
-        assert 'task_size' in df.columns
+        assert 'size' in df.columns
         assert 'optimal_gpu_fraction' in df.columns
         assert 'optimal_total_time' in df.columns
 
@@ -73,7 +73,7 @@ class TestOfflineTrainer:
     def test_run_full_pipeline(self, mock_create, mock_save, mock_train, mock_prep, trainer, mock_workload_generator):
         # Setup mocks
         mock_prep.return_value = pd.DataFrame({
-            'task_size': [100], 'compute_intensity': [0.5], 'memory_required': [10],
+            'size': [100], 'compute_intensity': [0.5], 'memory_required': [10],
             'memory_per_size': [0.1], 'compute_to_memory': [0.05],
             'optimal_gpu_fraction': [0.5]
         })

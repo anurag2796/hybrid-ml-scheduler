@@ -233,7 +233,7 @@ def run_evaluation_phase(config: dict, scheduler, decisions, rl_scheduler=None):
         
         # 1. Predict placement
         features = pd.DataFrame([{
-            'task_size': task.size,
+            'size': task.size,
             'compute_intensity': task.compute_intensity,
             'memory_required': task.memory_required,
             'memory_per_size': task.memory_required / (task.size + 1),
