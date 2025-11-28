@@ -29,8 +29,8 @@ class CorrelationIdFilter:
         return True
 
 
-def serialize_log(record):
-    """Serialize log record to JSON format."""
+def patch_json(record):
+    """Patch record with JSON serialization."""
     subset = {
         "timestamp": record["time"].isoformat(),
         "level": record["level"].name,
@@ -43,7 +43,7 @@ def serialize_log(record):
     
     # Add extra fields
     for key, value in record["extra"].items():
-        if key != "correlation_id":
+        if key not in ["correlation_id", "json"]:
             subset[key] = value
     
     # Add exception if present
@@ -54,7 +54,7 @@ def serialize_log(record):
             "traceback": record["exception"].traceback
         }
     
-    return json.dumps(subset)
+    record["extra"]["json"] = json.dumps(subset)
 
 
 def setup_logging(environment: str = "development", log_dir: str = "logs"):
@@ -67,6 +67,9 @@ def setup_logging(environment: str = "development", log_dir: str = "logs"):
     """
     # Remove default logger
     logger.remove()
+    
+    # Configure patcher
+    logger.configure(patcher=patch_json)
     
     # Create log directory
     Path(log_dir).mkdir(parents=True, exist_ok=True)
@@ -85,9 +88,9 @@ def setup_logging(environment: str = "development", log_dir: str = "logs"):
         # JSON format for production
         logger.add(
             sys.stderr,
-            format=serialize_log,
+            format="{extra[json]}",
             level="INFO",
-            serialize=True,
+            serialize=False,
             filter=CorrelationIdFilter()
         )
     
@@ -97,9 +100,9 @@ def setup_logging(environment: str = "development", log_dir: str = "logs"):
         rotation="100 MB",
         retention="30 days",
         compression="gz",
-        format=serialize_log,
+        format="{extra[json]}",
         level="INFO",
-        serialize=True,
+        serialize=False,
         filter=CorrelationIdFilter()
     )
     
@@ -109,9 +112,9 @@ def setup_logging(environment: str = "development", log_dir: str = "logs"):
         rotation="50 MB",
         retention="60 days",
         compression="gz",
-        format=serialize_log,
+        format="{extra[json]}",
         level="ERROR",
-        serialize=True,
+        serialize=False,
         filter=CorrelationIdFilter()
     )
     

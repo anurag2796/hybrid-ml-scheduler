@@ -12,7 +12,7 @@ from loguru import logger
 from backend.core.config import settings
 from backend.core.database import init_db, close_db
 from backend.core.redis import redis_client
-from backend.api.routes import health, websocket, simulation, metrics, observability
+from backend.api.routes import health, websocket, simulation as simulation_routes, metrics, observability
 from backend.__version__ import __version__
 from backend.middleware.observability import ObservabilityMiddleware, ErrorTrackingMiddleware
 from backend.middleware.rate_limit import RateLimitMiddleware
@@ -21,8 +21,8 @@ from backend.services.logging_service import setup_logging
 from src.simulation_engine import ContinuousSimulation
 
 
-# Global simulation engine
-simulation = None
+# Global simulation engine instance
+simulation_engine_instance = None
 
 
 @asynccontextmanager
@@ -50,10 +50,13 @@ async def lifespan(app: FastAPI):
         logger.warning(f"⚠️  Redis connection failed (degraded mode): {e}")
     
     # Initialize simulation engine
-    global simulation
+    global simulation_engine_instance
     sim_engine = ContinuousSimulation(broadcast_callback=websocket.manager.broadcast)
-    simulation.set_simulation_engine(sim_engine)
-    simulation = sim_engine
+    
+    # Set engine in the router
+    simulation_routes.set_simulation_engine(sim_engine)
+    
+    simulation_engine_instance = sim_engine
     logger.info("✅ Simulation engine initialized")
     
     # Start simulation by default
@@ -65,8 +68,8 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("🛑 Shutting down...")
     
-    if simulation:
-        simulation.stop()
+    if simulation_engine_instance:
+        simulation_engine_instance.stop()
         logger.info("✅ Simulation stopped")
     
     await close_db()
@@ -102,7 +105,7 @@ app.add_middleware(ErrorTrackingMiddleware)
 # Include routers
 app.include_router(health.router)
 app.include_router(websocket.router)
-app.include_router(simulation.router)
+app.include_router(simulation_routes.router)
 app.include_router(metrics.router)
 app.include_router(observability.router)
 

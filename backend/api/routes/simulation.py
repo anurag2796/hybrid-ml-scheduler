@@ -89,28 +89,19 @@ async def get_simulation_status():
 @router.get("/full_history")
 async def get_full_history():
     """
-    Get full simulation history.
+    Get full simulation history (training data).
     
-    Returns metrics and performance data for all schedulers.
+    Returns:
+        List[Dict]: List of historical task execution data.
     """
     if simulation_engine is None:
         raise HTTPException(status_code=500, detail="Simulation engine not initialized")
     
-    # Calculate comparison data
-    comparison = []
-    for name, metrics in simulation_engine.metrics.items():
-        total_tasks = metrics.get('tasks', 0)
-        total_time = metrics.get('total_time', 0.0)
-        avg_time = total_time / max(1, total_tasks)
-        
-        comparison.append({
-            'name': name,
-            'avg_time': avg_time,
-            'total_tasks': total_tasks,
-            'total_time': total_time
-        })
-    
-    return {
-        "comparison": comparison,
-        "tasks_processed": simulation_engine.tasks_processed
-    }
+    try:
+        from backend.services.simulation_data_service import SimulationDataService
+        # Get latest 1000 records
+        data = await SimulationDataService.get_latest_training_data(limit=1000)
+        return data
+    except Exception as e:
+        logger.error(f"Failed to fetch full history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

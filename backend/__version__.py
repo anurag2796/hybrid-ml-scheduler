@@ -2,7 +2,7 @@
 Version information for the Hybrid ML Scheduler.
 """
 
-__version__ = "1.6.0"  # Major.Phase.Patch
+__version__ = "2.0.0"  # Major.Phase.Patch
 
 # Version History:
 # 1.0.0 - Initial release
