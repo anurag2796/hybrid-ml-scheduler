@@ -319,11 +319,11 @@ const Dashboard = () => {
           <div className="flex gap-0 w-full h-full relative z-10 divide-x divide-white/5">
             <div className="flex-1 p-4 flex flex-col justify-center">
               <div className="text-[10px] font-bold text-gray-500 tracking-wider mb-1">AVG LATENCY</div>
-              <div className="text-2xl font-bold text-white font-mono">{selectedMetrics?.time.toFixed(4) || '-'}s</div>
+              <div className="text-2xl font-bold text-neon-cyan font-mono">{selectedMetrics?.time.toFixed(4) || '-'}s</div>
             </div>
             <div className="flex-1 p-4 flex flex-col justify-center">
               <div className="text-[10px] font-bold text-gray-500 tracking-wider mb-1">ENERGY / TASK</div>
-              <div className="text-2xl font-bold text-white font-mono">{selectedMetrics?.energy.toFixed(2) || '-'}J</div>
+              <div className="text-2xl font-bold text-neon-purple font-mono">{selectedMetrics?.energy.toFixed(2) || '-'}J</div>
             </div>
             <div className="flex-1 p-4 flex flex-col justify-center">
               <div className="text-[10px] font-bold text-gray-500 tracking-wider mb-1">COST EFFICIENCY</div>
@@ -439,8 +439,8 @@ const Dashboard = () => {
       <div className="w-64 glass-panel border-r border-white/5 flex flex-col z-20">
         <div className="p-4 border-b border-white/5">
           <h1 className="text-lg font-bold tracking-tight text-white glow-text flex items-center gap-2">
-            <LayoutDashboard size={20} className="text-cyan-400" />
-            SCHEDULER LAB
+            <LayoutDashboard size={20} className="text-neon-cyan" />
+            <span className="text-neon-cyan">SCHEDULER LAB</span>
           </h1>
           <p className="text-[10px] text-cyan-400/70 font-mono tracking-wider mt-1">VIRTUAL CLUSTER MANAGER</p>
         </div>
