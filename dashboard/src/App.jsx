@@ -137,10 +137,10 @@ const Dashboard = () => {
       const transformed = {
         time: new Date().toLocaleTimeString(),
         avgUtil: (util.average_utilization * 100).toFixed(1),
-        gpu0: util.gpu_0.utilization * 100,
-        gpu1: util.gpu_1.utilization * 100,
-        gpu2: util.gpu_2.utilization * 100,
-        gpu3: util.gpu_3.utilization * 100,
+        gpu0: (util.gpu_0?.utilization || 0) * 100,
+        gpu1: (util.gpu_1?.utilization || 0) * 100,
+        gpu2: (util.gpu_2?.utilization || 0) * 100,
+        gpu3: (util.gpu_3?.utilization || 0) * 100,
         raw: message
       };
       console.log('✅ Transformed data:', transformed);
@@ -342,7 +342,7 @@ const Dashboard = () => {
             </h3>
             <GripHorizontal className="text-gray-600" size={14} />
           </div>
-          <div className="p-4 relative" style={{ height: '250px' }}>
+          <div className="flex-1 min-h-0 w-full p-4">
             {data.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={data}>
@@ -363,6 +363,7 @@ const Dashboard = () => {
           </div>
         </div>
 
+
         <div key="oracle_vs" className="glass-panel p-0 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-white/5 bg-black/20 flex justify-between items-center cursor-move drag-handle">
             <h3 className="text-xs font-bold text-gray-300 flex items-center gap-2">
@@ -370,7 +371,7 @@ const Dashboard = () => {
             </h3>
             <GripHorizontal className="text-gray-600" size={14} />
           </div>
-          <div className="p-2 relative" style={{ height: '250px' }}>
+          <div className="flex-1 min-h-0 w-full p-2">
             {latestResults ? (
               <ResponsiveContainer width="100%" height="100%">
                 <RadarChart cx="50%" cy="50%" outerRadius="65%" data={radarData}>
@@ -383,10 +384,10 @@ const Dashboard = () => {
                   <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '6px' }} />
                 </RadarChart>
               </ResponsiveContainer>
-            ) : <div className="absolute inset-0 flex items-center justify-center text-gray-500 text-xs">Waiting for simulation data...</div>}
+            ) : <div className="flex items-center justify-center h-full text-gray-500 text-xs">Waiting for simulation data...</div>}
           </div>
-        </div>
 
+        </div>
         <div key="resource_split" className="glass-panel p-0 flex flex-col overflow-hidden">
           <div className="p-3 border-b border-white/5 bg-black/20 flex justify-between items-center cursor-move drag-handle">
             <h3 className="text-xs font-bold text-gray-300 flex items-center gap-2">
@@ -394,7 +395,7 @@ const Dashboard = () => {
             </h3>
             <GripHorizontal className="text-gray-600" size={14} />
           </div>
-          <div className="p-2 relative" style={{ height: '200px' }}>
+          <div className="flex-1 min-h-0 w-full p-2">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie data={getSplitData()} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={5} dataKey="value">
@@ -429,7 +430,7 @@ const Dashboard = () => {
             ))}
           </div>
         </div>
-      </ResponsiveGridLayout>
+      </ResponsiveGridLayout >
     );
   };
 

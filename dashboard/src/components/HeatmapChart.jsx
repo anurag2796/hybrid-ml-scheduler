@@ -46,7 +46,7 @@ const HeatmapChart = ({ data, xLabel, yLabel, title }) => {
     const paddingTop = 20;
     const paddingBottom = 40;
 
-    const width = paddingLeft + xValues.length * cellWidth + 20;
+    const width = paddingLeft + xValues.length * cellWidth + 80;
     const height = paddingTop + yValues.length * cellHeight + paddingBottom;
 
     return (

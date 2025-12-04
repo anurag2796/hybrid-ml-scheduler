@@ -15,6 +15,8 @@ const CorrelationMatrix = ({ correlations, features }) => {
     const cellSize = 50;
     const padding = 100;
     const size = features.length * cellSize + padding;
+    const legendWidth = 80;
+    const totalWidth = size + legendWidth;
 
     const getColor = (correlation) => {
         if (correlation === null || correlation === undefined) return '#1f2937';
@@ -43,7 +45,7 @@ const CorrelationMatrix = ({ correlations, features }) => {
 
     return (
         <div className="overflow-auto">
-            <svg width={size} height={size}>
+            <svg width={totalWidth} height={size}>
                 {/* Grid */}
                 {features.map((rowFeature, ri) => (
                     features.map((colFeature, ci) => {
@@ -106,7 +108,7 @@ const CorrelationMatrix = ({ correlations, features }) => {
                 ))}
 
                 {/* Legend */}
-                <g transform={`translate(${size - 80}, ${padding + 20})`}>
+                <g transform={`translate(${size + 10}, ${padding + 20})`}>
                     <text x={0} y={-10} style={{ fontSize: 10, fill: '#6b7280', fontWeight: 600 }}>
                         Correlation
                     </text>

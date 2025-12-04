@@ -14,7 +14,7 @@ const GaugeChart = ({ value, max = 100, label, color = '#06b6d4', size = 120 }) 
 
     return (
         <div className="flex flex-col items-center">
-            <svg width={size} height={size * 0.6} viewBox={`0 0 ${size} ${size * 0.6}`}>
+            <svg width={size} height={size * 0.8} viewBox={`0 0 ${size} ${size * 0.8}`}>
                 {/* Background arc */}
                 <path
                     d={`M ${size * 0.1} ${size / 2} A ${size * 0.4} ${size * 0.4} 0 0 1 ${size * 0.9} ${size / 2}`}
