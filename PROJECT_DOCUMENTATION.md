@@ -13,7 +13,48 @@ The system features a continuous simulation engine, a robust backend API, persis
 
 ---
 
-## 2. System Architecture (High-Level Design)
+## 2. Installation & Setup
+
+### Prerequisites
+*   **Python 3.9+**
+*   **Node.js 16+**
+*   **PostgreSQL** (Optional, for full persistence)
+*   **Redis** (Optional, for caching)
+
+### Backend Setup
+1.  **Create Virtual Environment**:
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+    ```
+2.  **Install Dependencies**:
+    ```bash
+    pip install -r requirements.txt
+    ```
+3.  **Run the Server**:
+    ```bash
+    uvicorn src.dashboard_server:app --reload
+    ```
+    The API will be available at `http://localhost:8000`.
+
+### Frontend Setup
+1.  **Navigate to Dashboard**:
+    ```bash
+    cd dashboard
+    ```
+2.  **Install Dependencies**:
+    ```bash
+    npm install
+    ```
+3.  **Start Development Server**:
+    ```bash
+    npm run dev
+    ```
+    The dashboard will be available at `http://localhost:5173`.
+
+---
+
+## 3. System Architecture (High-Level Design)
 
 The system follows a modern, modular architecture composed of four main layers:
 
@@ -22,7 +63,35 @@ The system follows a modern, modular architecture composed of four main layers:
 3.  **Simulation Layer (Engine):** A Python-based engine that generates workloads and executes scheduling strategies.
 4.  **Data Layer (Persistence):** PostgreSQL for long-term storage and Redis for high-speed caching.
 
-![System Architecture](docs/images/system_architecture.png)
+```mermaid
+graph TD
+    subgraph "Frontend (React)"
+        Dash[Dashboard UI]
+    end
+
+    subgraph "Backend (FastAPI)"
+        API[API Endpoints]
+        WS[WebSocket Manager]
+        Sim[Simulation Engine]
+        Gen[Workload Generator]
+        Schedulers[Schedulers]
+    end
+
+    subgraph "Data Layer"
+        DB[(PostgreSQL)]
+        File[History CSV]
+    end
+
+    Gen -->|Tasks| Sim
+    Sim -->|State| Schedulers
+    Schedulers -->|Decisions| Sim
+    Sim -->|Real-time Updates| WS
+    WS -->|JSON Stream| Dash
+    Sim -->|Persist Results| File
+    Sim -->|Persist Results| DB
+    Dash -->|Control (Start/Stop)| API
+    API -->|Commands| Sim
+```
 
 ### Data Flow Overview
 1.  **Workload Generation:** The Simulation Engine generates synthetic tasks with varying characteristics (size, compute intensity, memory).
@@ -34,11 +103,11 @@ The system follows a modern, modular architecture composed of four main layers:
 
 ---
 
-## 3. Deep Dive: Core Logic & Algorithms
+## 4. Deep Dive: Core Logic & Algorithms
 
 This section explains the internal mechanics of the system, allowing you to understand the "how" and "why" without reading the code.
 
-### 3.1. Workload Generation (The "Tasks")
+### 4.1. Workload Generation (The "Tasks")
 The system generates a continuous stream of synthetic tasks that mimic real-world parallel computing jobs.
 
 *   **Generation Process:** Tasks arrive according to a **Poisson Process** (exponentially distributed inter-arrival times), creating a realistic, bursty workload.
@@ -52,7 +121,7 @@ The system generates a continuous stream of synthetic tasks that mimic real-worl
     $$ T_{base} \propto \frac{N^{1.5}}{I + 0.5} $$
     *This means larger tasks take super-linearly longer, but high compute intensity reduces time (assuming parallel hardware).*
 
-### 3.2. The Schedulers (The "Competitors")
+### 4.2. The Schedulers (The "Competitors")
 The system runs six scheduling strategies in parallel for every task to compare their performance.
 
 #### 1. Round Robin (Baseline)
@@ -70,22 +139,44 @@ The system runs six scheduling strategies in parallel for every task to compare 
 *   **Rationale:** High intensity tasks *should* go to GPU. This is a strong heuristic baseline.
 
 #### 4. Hybrid ML (The "Brain")
-*   **Type:** Supervised Learning (Random Forest Regressor).
-*   **Features:**
-    *   Raw: `Size`, `Intensity`, `Memory`.
-    *   Derived: `Memory per Unit Size`, `Compute to Memory Ratio`.
-*   **Logic:**
-    1.  Predicts the **Optimal GPU Fraction** ($y$) that minimizes execution time.
-    2.  Selects the specific GPU ID that minimizes a weighted cost of **Time** and **Energy**.
-*   **Training:** Retrains every 50 tasks using a sliding window of the last 1000 "Oracle" decisions.
+*   **Type:** Supervised Learning (Random Forest Regressor via Scikit-Learn).
+    *   **Model:** `RandomForestRegressor(n_estimators=100, max_depth=15)`.
+    *   **Preprocessing:** Features are scaled using `StandardScaler`.
+*   **Input Features:**
+    *   `size`: Raw task size.
+    *   `compute_intensity`: Parallelizability factor (0.0 - 1.0).
+    *   `memory_required`: RAM usage in MB.
+    *   `memory_per_size`: Density metric ($Memory / (Size + 1)$).
+    *   `compute_to_memory`: Ratio metric ($Intensity / (Memory + 1)$).
+*   **Decision Logic:**
+    1.  **Predict:** The model predicts the optimal **GPU Fraction** ($0.0 - 1.0$).
+    2.  **Select GPU:** The scheduler calculates a "Cost" for each available GPU to find the best placement:
+        $$ Cost = (1 - w_E) \times \frac{T_{est}}{10.0} + w_E \times \frac{E_{est}}{500.0} $$
+        *Where $w_E$ is the Energy Weight (default 0.5), normalizing time to ~10s and energy to ~500J.*
+*   **Training Loop:**
+    *   Retrains every 50 tasks (sliding window).
+    *   Uses "Oracle" decisions (retrospective optimal choices) as the ground truth labels.
 
 #### 5. RL Agent (Deep Q-Network)
-*   **Type:** Reinforcement Learning (DQN with Dueling Architecture).
-*   **State:** Vector $[Size, Intensity, Memory]$.
-*   **Action Space:** Discrete choices: $\{CPU, GPU_0, GPU_1, GPU_2, GPU_3\}$.
-*   **Reward Function:** Negative weighted sum of Time and Energy.
-    $$ R = - (0.5 \times Time + 0.5 \times Energy) $$
-*   **Learning:** Uses "Experience Replay" to learn from past mistakes and optimizes its policy to maximize long-term rewards.
+*   **Architecture:** Dueling DQN (Deep Q-Network).
+    *   **Value Stream:** Estimates state value $V(s)$.
+    *   **Advantage Stream:** Estimates action advantage $A(s, a)$.
+    *   **Aggregation:** $Q(s, a) = V(s) + (A(s, a) - \text{mean}(A))$.
+    *   **Hidden Layers:** 2x Fully Connected (256 units, ReLU activation).
+*   **State Space (Normalized):**
+    *   $\text{Size} / 10000.0$
+    *   $\text{Compute Intensity}$ (Raw 0-1)
+    *   $\text{Memory} / 5000.0$
+*   **Action Space:** Discrete options $[ \text{CPU}, \text{GPU}_0, \text{GPU}_1, \dots, \text{GPU}_N ]$.
+*   **Reward Function:**
+    *   The agent aims to maximize specific rewards defined as negative cost:
+    *   $$ R = - \left[ (1 - w) \times T_{exec} + w \times \frac{E_{joules}}{100.0} \right] $$
+*   **Hyperparameters:**
+    *   `Gamma` (Discount Factor): 0.99
+    *   `Epsilon` (Exploration): Starts at 1.0, decays to 0.01 (Factor: 0.9999).
+    *   `Replay Buffer`: 50,000 transitions.
+    *   `Batch Size`: 128.
+    *   `Target Update`: Every 100 steps.
 
 #### 6. Oracle (The "Ground Truth")
 *   **Logic:** A theoretical solver that "cheats" by trying every possible split (0% to 100% in 5% steps).
@@ -94,7 +185,7 @@ The system runs six scheduling strategies in parallel for every task to compare 
     *   Acts as the **Label** for the Hybrid ML model (Supervised Learning).
     *   Serves as the **Performance Ceiling** (100% Efficiency) for comparison.
 
-### 3.3. Simulation Physics
+### 4.3. Simulation Physics
 How do we calculate "Time" and "Energy"?
 
 *   **Execution Time:**
@@ -109,9 +200,9 @@ How do we calculate "Time" and "Energy"?
 
 ---
 
-## 4. System Flow & Architecture
+## 5. System Flow & Architecture
 
-### 4.1. The "Loop"
+### 5.1. The "Loop"
 1.  **Generate:** A new task is born (`WorkloadGenerator`).
 2.  **Broadcast:** The task is sent to all 6 schedulers simultaneously.
 3.  **Decide:** Each scheduler makes its move (Predict, Randomize, or Calculate).
@@ -122,7 +213,7 @@ How do we calculate "Time" and "Energy"?
     *   **RL Agent:** Store transition -> Update Q-Network weights.
 7.  **Visualize:** Send JSON packet via WebSocket to the Dashboard.
 
-### 4.2. Component Details
+### 5.2. Component Details
 
 #### Frontend Dashboard (`/dashboard`)
 *   **Tech:** React, Vite, TailwindCSS, Recharts.
@@ -144,9 +235,9 @@ How do we calculate "Time" and "Energy"?
 *   **PostgreSQL:** Stores the "Truth". Every single task execution is logged here.
 *   **Redis:** The "Short-term Memory". Caches high-speed data like current stats to prevent DB overload.
 
-## 5. Technical Reference
+## 6. Technical Reference
 
-### 5.1. Database Schema (PostgreSQL)
+### 6.1. Database Schema (PostgreSQL)
 The system uses a relational schema optimized for time-series performance.
 
 #### `tasks` Table
@@ -181,7 +272,7 @@ Historical data used to train the Hybrid ML model.
 | `optimal_gpu_fraction` | Float | **Label:** The best fraction found by Oracle. |
 | `optimal_time` | Float | The execution time achieved by Oracle. |
 
-### 5.2. API Specification (FastAPI)
+### 6.2. API Specification (FastAPI)
 
 #### Simulation Control
 *   `POST /api/simulation/start`: Begin the continuous simulation.
@@ -200,7 +291,7 @@ Historical data used to train the Hybrid ML model.
     *   `simulation_update`: Real-time packet with current task, scheduler results, and cluster utilization.
     *   `notification`: System alerts (e.g., "Model Retrained").
 
-### 5.3. Configuration Management
+### 6.3. Configuration Management
 The system is configured via environment variables (using `pydantic-settings`).
 
 #### Key Variables (`.env`)
@@ -215,7 +306,7 @@ The system is configured via environment variables (using `pydantic-settings`).
 
 ---
 
-## 6. Directory Structure
+## 7. Directory Structure
 ```
 hybrid_ml_scheduler/
 ├── backend/                # FastAPI Application

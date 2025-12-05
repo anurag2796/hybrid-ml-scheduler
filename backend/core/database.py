@@ -1,7 +1,6 @@
 """
-Database setup and connection management.
-
-Provides async database connections using SQLAlchemy and asyncpg.
+Sets up the database connection.
+Uses SQLAlchemy with asyncpg so it's non-blocking.
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
@@ -36,7 +35,7 @@ Base = declarative_base()
 
 
 async def init_db():
-    """Initialize database and create tables."""
+    """Creates all the tables if they don't exist."""
     try:
         async with engine.begin() as conn:
             # Import models to register them
@@ -52,12 +51,8 @@ async def init_db():
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
-    Dependency for getting async database sessions.
-    
-    Usage in FastAPI:
-        @app.get("/endpoint")
-        async def endpoint(db: AsyncSession = Depends(get_db)):
-            ...
+    Dependency for FastAPI to get a DB session.
+    Usage: async def my_endpoint(db: AsyncSession = Depends(get_db)):
     """
     async with AsyncSessionLocal() as session:
         try:
@@ -72,7 +67,7 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 @asynccontextmanager
 async def get_db_context():
-    """Context manager for database sessions."""
+    """Context manager for when we need a DB session outside of a request."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
@@ -83,6 +78,6 @@ async def get_db_context():
 
 
 async def close_db():
-    """Close database connections."""
+    """Closes the DB connection pool."""
     await engine.dispose()
     logger.info("Database connections closed")

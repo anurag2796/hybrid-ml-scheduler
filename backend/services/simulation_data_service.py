@@ -1,7 +1,6 @@
 """
-Service layer for simulation data persistence.
-
-Provides high-level business logic wrapping the repository layer.
+Handles saving simulation data to the database.
+Wraps the repository stuff so the main code doesn't have to deal with it.
 """
 import asyncio
 from typing import List, Dict, Optional
@@ -11,22 +10,19 @@ from loguru import logger
 from backend.core.database import get_db_context
 from backend.repositories import TrainingDataRepository, SchedulerResultRepository, TaskRepository
 from backend.models.schemas import TrainingDataCreate, SchedulerResultCreate, TaskCreate
-from src.workload_generator import Task
+from backend.models.domain import Task
+from src.workload_generator import Task as TaskObj
+from sqlalchemy import select
 
 
 class SimulationDataService:
-    """Service for managing simulation data persistence."""
+    # Service for managing simulation data persistence.
     
     @staticmethod
     async def save_training_data_batch(data_list: List[Dict]) -> int:
         """
-        Save a batch of training data to the database.
-        
-        Args:
-            data_list: List of dictionaries containing training data
-            
-        Returns:
-            Number of records saved
+        Saves a batch of training data to the DB.
+        Returns the number of records saved.
         """
         if not data_list:
             return 0
@@ -63,16 +59,8 @@ class SimulationDataService:
     @staticmethod
     async def get_latest_training_data(limit: int = 1000) -> List[Dict]:
         """
-        Get the latest training data for model retraining.
-        
-        Uses caching to avoid repeated database queries.
-        Cache TTL: 30 seconds
-        
-        Args:
-            limit: Maximum number of records to retrieve
-            
-        Returns:
-            List of training data dictionaries
+        Grabs the latest training data so we can retrain the model.
+        Uses a 30s cache so we don't hammer the DB.
         """
         from backend.services.cache_service import cache_service
         
@@ -113,16 +101,10 @@ class SimulationDataService:
             return []
     
     @staticmethod
-    async def save_scheduler_results(task: Task, results: Dict[str, Dict]) -> int:
+    async def save_scheduler_results(task: TaskObj, results: Dict[str, Dict]) -> int:
         """
-        Save scheduler results for a task.
-        
-        Args:
-            task: The task that was scheduled
-            results: Dictionary of scheduler results
-            
-        Returns:
-            Number of results saved
+        Saves the results from the scheduler for a specific task.
+        Returns how many results got saved.
         """
         try:
             async with get_db_context() as db:
@@ -174,18 +156,79 @@ class SimulationDataService:
             return 0
     
     @staticmethod
-    async def get_scheduler_stats(scheduler_name: str) -> Dict:
+    async def save_scheduler_results_batch(batch_data: List[tuple]) -> int:
         """
-        Get aggregate statistics for a scheduler.
-        
-        Uses caching to reduce database load.
-        Cache TTL: 10 seconds
-        
-        Args:
-            scheduler_name: Name of the scheduler
+        Saves a batch of (task, results) tuples to the DB.
+        """
+        if not batch_data:
+            return 0
             
-        Returns:
-            Dictionary with aggregate stats
+        try:
+            async with get_db_context() as db:
+                result_repo = SchedulerResultRepository(db)
+                task_repo = TaskRepository(db)
+                
+                tasks_to_create = []
+                results_to_create = []
+                
+                # Process batch
+                for task, results in batch_data:
+                    # Prepare Task
+                    # Check if we already added this task to our local list to avoid dupes in batch
+                    if not any(t.task_id == task.task_id for t in tasks_to_create):
+                        tasks_to_create.append(TaskCreate(
+                            task_id=task.task_id,
+                            size=task.size,
+                            compute_intensity=task.compute_intensity,
+                            memory_required=task.memory_required,
+                            duration_estimate=task.duration_estimate,
+                            arrival_time=task.arrival_time,
+                            dependencies=task.dependencies if hasattr(task, 'dependencies') else []
+                        ))
+                    
+                    # Prepare Results
+                    for scheduler_name, result in results.items():
+                        results_to_create.append(SchedulerResultCreate(
+                            task_id=task.task_id,
+                            scheduler_name=scheduler_name,
+                            gpu_fraction=result['gpu_fraction'],
+                            cpu_fraction=1.0 - result['gpu_fraction'],
+                            gpu_id=result.get('gpu_id'),
+                            actual_time=result['actual_time'],
+                            energy_consumption=result.get('energy'),
+                            execution_cost=result.get('cost'),
+                            extra_metadata={}
+                        ))
+                
+                # Bulk insert Tasks
+                # First check which tasks already exist to avoid UniqueViolation
+                if tasks_to_create:
+                    existing_ids_res = await db.execute(
+                        select(Task.task_id).where(Task.task_id.in_([t.task_id for t in tasks_to_create]))
+                    )
+                    existing_ids = set(existing_ids_res.scalars().all())
+                    
+                    # Filter out existing tasks
+                    new_tasks = [t for t in tasks_to_create if t.task_id not in existing_ids]
+                    
+                    if new_tasks:
+                        await task_repo.create_many(new_tasks)
+                
+                # Bulk insert Results
+                if results_to_create:
+                    await result_repo.create_many(results_to_create)
+                
+                await db.commit()
+                
+                logger.debug(f"Saved batch: {len(tasks_to_create)} tasks, {len(results_to_create)} results")
+                return len(results_to_create)
+                
+        except Exception as e:
+            logger.error(f"Failed to save scheduler results batch: {e}")
+            return 0
+        """
+        Gets the stats for a scheduler (like avg time, energy, etc).
+        Caches it for 10s.
         """
         from backend.services.cache_service import cache_service
         
@@ -214,10 +257,7 @@ class SimulationDataService:
     @staticmethod
     async def cleanup_old_data(keep_last_n: int = 10000):
         """
-        Clean up old training data to prevent database bloat.
-        
-        Args:
-            keep_last_n: Number of most recent records to keep
+        Deletes old training data so the DB doesn't get too huge.
         """
         try:
             async with get_db_context() as db:
@@ -227,3 +267,16 @@ class SimulationDataService:
                     logger.info(f"Cleaned up {deleted} old training records")
         except Exception as e:
             logger.error(f"Failed to cleanup old data: {e}")
+
+    @staticmethod
+    async def get_comparative_history(limit: int = 100) -> List[Dict]:
+        """
+        Gets the comparative history of tasks and scheduler results.
+        """
+        try:
+            async with get_db_context() as db:
+                repo = SchedulerResultRepository(db)
+                return await repo.get_comparative_history(limit)
+        except Exception as e:
+            logger.error(f"Failed to get comparative history: {e}")
+            return []

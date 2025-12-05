@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, desc, func
 from datetime import datetime
 
-from backend.models.domain import SchedulerResult
+from backend.models.domain import SchedulerResult, Task
 from backend.models.schemas import SchedulerResultCreate, SchedulerResultResponse
 
 
@@ -88,3 +88,58 @@ class SchedulerResultRepository:
             'total_energy': float(row.total_energy or 0),
             'total_cost': float(row.total_cost or 0)
         }
+
+        
+    async def get_comparative_history(self, limit: int = 100) -> List[Dict]:
+        """
+        Get tasks with all their scheduler results for comparison.
+        Returns a list of dicts, one per task, with nested results.
+        """
+        # We want to fetch the last N tasks and all their results
+        # This is a bit complex in pure ORM async, so we'll do it in two steps or a join
+        
+        # 1. Get last N tasks
+        stmt_tasks = (
+            select(Task)
+            .order_by(desc(Task.task_id))
+            .limit(limit)
+        )
+        tasks_res = await self.session.execute(stmt_tasks)
+        tasks = tasks_res.scalars().all()
+        
+        if not tasks:
+            return []
+            
+        task_ids = [t.task_id for t in tasks]
+        
+        # 2. Get results for these tasks
+        stmt_results = (
+            select(SchedulerResult)
+            .where(SchedulerResult.task_id.in_(task_ids))
+        )
+        results_res = await self.session.execute(stmt_results)
+        results = results_res.scalars().all()
+        
+        # 3. Assemble
+        # Map task_id -> list of results
+        results_map = {}
+        for r in results:
+            if r.task_id not in results_map:
+                results_map[r.task_id] = {}
+            results_map[r.task_id][r.scheduler_name] = {
+                'time': r.actual_time,
+                'gpu_fraction': r.gpu_fraction,
+                'cost': r.execution_cost
+            }
+            
+        # Create final list
+        comparative_data = []
+        for t in tasks:
+            comparative_data.append({
+                'task_id': t.task_id,
+                'size': t.size,
+                'intensity': t.compute_intensity,
+                'results': results_map.get(t.task_id, {})
+            })
+            
+        return comparative_data

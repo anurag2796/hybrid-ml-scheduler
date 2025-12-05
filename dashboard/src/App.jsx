@@ -8,6 +8,7 @@ import {
 import { Play, Pause, Activity, Cpu, Zap, Layers, Terminal, Wifi, BarChart2, Database, PieChart as PieIcon, Target, History, Trash2, LayoutDashboard, Server, Brain, Shuffle, MousePointer2, GripHorizontal, TrendingUp } from 'lucide-react';
 import { Responsive, WidthProvider } from 'react-grid-layout';
 import EnhancedVisualizationsDemo from './components/EnhancedVisualizationsDemo';
+import HistoricalPerformanceTable from './components/HistoricalPerformanceTable';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 
@@ -174,9 +175,11 @@ const Dashboard = () => {
 
   // Radar Data: Selected vs Oracle
   const radarData = latestResults ? [
-    { subject: 'Time', A: latestResults[activeView]?.time || 0, B: latestResults.oracle?.time || 0, fullMark: 1 },
-    { subject: 'Energy', A: (latestResults[activeView]?.energy || 0) / 100, B: (latestResults.oracle?.energy || 0) / 100, fullMark: 1 },
-    { subject: 'Cost', A: (latestResults[activeView]?.cost || 0) * 1000, B: (latestResults.oracle?.cost || 0) * 1000, fullMark: 1 },
+    { subject: 'Time', A: latestResults[activeView]?.time || 0, B: latestResults.oracle?.time || 0, fullMark: 10 },
+    // Energy is usually 100-300J. Divide by 200 to map to ~0.5-1.5 range
+    { subject: 'Energy', A: (latestResults[activeView]?.energy || 0) / 200, B: (latestResults.oracle?.energy || 0) / 200, fullMark: 10 },
+    // Cost is tiny (~5e-6). Multiply by 200,000 to map to ~1.0 range
+    { subject: 'Cost', A: (latestResults[activeView]?.cost || 0) * 200000, B: (latestResults.oracle?.cost || 0) * 200000, fullMark: 10 },
   ] : [];
 
   // Pie Data: GPU vs CPU Split (Mocked based on scheduler logic)
@@ -199,7 +202,7 @@ const Dashboard = () => {
   const renderContent = () => {
     if (activeView === 'global') {
       return (
-        <div className="grid grid-cols-12 gap-6 p-6 h-full overflow-y-auto">
+        <div className="grid grid-cols-12 gap-6 p-6">
           <div className="col-span-12 md:col-span-6 glass-panel p-6 relative overflow-hidden group" style={{ height: 450 }}>
             <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
             <h2 className="text-sm font-bold text-gray-300 mb-4 flex items-center gap-2 relative z-10">
@@ -241,6 +244,11 @@ const Dashboard = () => {
                 </ScatterChart>
               </ResponsiveContainer>
             </div>
+          </div>
+
+          {/* Historical Data Section */}
+          <div className="col-span-12 glass-panel p-6 relative overflow-hidden group">
+            <HistoricalPerformanceTable />
           </div>
         </div>
       );

@@ -105,3 +105,25 @@ async def get_full_history():
     except Exception as e:
         logger.error(f"Failed to fetch full history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/history/comparative")
+async def get_comparative_history(limit: int = 100):
+    """
+    Get comparative history of tasks and scheduler results.
+    
+    Args:
+        limit: Maximum number of tasks to return
+        
+    Returns:
+        List[Dict]: List of tasks with their scheduler results.
+    """
+    if simulation_engine is None:
+        raise HTTPException(status_code=500, detail="Simulation engine not initialized")
+    
+    try:
+        from backend.services.simulation_data_service import SimulationDataService
+        return await SimulationDataService.get_comparative_history(limit)
+    except Exception as e:
+        logger.error(f"Failed to fetch comparative history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

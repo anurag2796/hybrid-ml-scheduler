@@ -1,20 +1,7 @@
-"""FastAPI WebSocket Server for Hybrid ML Scheduler Dashboard.
-
-This module implements the backend API server that:
-- Manages WebSocket connections for real-time dashboard updates
-- Hosts REST endpoints for historical data and simulation control
-- Orchestrates the continuous simulation engine
-- Broadcasts scheduler performance metrics to connected clients
-
-The server runs on http://localhost:8000 by default and provides:
-- WebSocket endpoint: ws://localhost:8000/ws
-- REST API: http://localhost:8000/api/*
-
-Typical Usage:
-    Run with uvicorn:
-    ```bash
-    uvicorn src.dashboard_server:app --host 0.0.0.0 --port 8000
-    ```
+"""
+This is the main backend server.
+It runs the simulation and sends updates to the frontend using WebSockets.
+Also has some API endpoints for history and controlling the sim.
 """
 import asyncio
 import json
@@ -34,42 +21,24 @@ app.add_middleware(
 )
 
 class ConnectionManager:
-    """Manages WebSocket connections for live dashboard updates.
-    
-    This class maintains a list of active WebSocket connections and provides
-    methods to connect, disconnect, and broadcast messages to all clients.
-    
-    Attributes:
-        active_connections (List[WebSocket]): List of currently connected WebSocket clients
-    """
+    # Handles all the WebSocket connections.
+    # Keeps track of who's connected so we can send them updates.
     
     def __init__(self):
         """Initialize the connection manager with an empty connection list."""
         self.active_connections: List[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
-        """Accept and register a new WebSocket connection.
-        
-        Args:
-            websocket (WebSocket): The WebSocket connection to accept
-        """
+        # New client connected.
         await websocket.accept()
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        """Remove a WebSocket connection from the active list.
-        
-        Args:
-            websocket (WebSocket): The WebSocket connection to remove
-        """
+        # Client disconnected.
         self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
-        """Send a JSON message to all connected WebSocket clients.
-        
-        Args:
-            message (dict): The message dictionary to broadcast as JSON
-        """
+        # Sends a message to everyone connected.
         logger.info(f"Broadcasting to {len(self.active_connections)} connections")
         for connection in self.active_connections:
             try:
@@ -93,7 +62,7 @@ async def get_history():
 
 @app.get("/api/full_history")
 async def get_full_history(limit: int = 1000):
-    """Read full history from CSV (limited to last N rows)"""
+    # Reads the full history from the CSV file.
     try:
         if simulation.history_file.exists():
             import pandas as pd
@@ -109,9 +78,19 @@ async def get_full_history(limit: int = 1000):
         logger.error(f"Error reading history: {e}")
         return []
 
+@app.get("/api/history/comparative")
+async def get_comparative_history(limit: int = 100):
+    # Returns the full history of tasks with scheduler results.
+    try:
+        from backend.services import SimulationDataService
+        return await SimulationDataService.get_comparative_history(limit)
+    except Exception as e:
+        logger.error(f"Error getting comparative history: {e}")
+        return []
+
 @app.delete("/api/history")
 async def clear_history():
-    """Clear the history CSV"""
+    # Wipes the history CSV.
     try:
         if simulation.history_file.exists():
             # Keep header
@@ -134,7 +113,7 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 def broadcast_sync(message: dict):
-    """Helper to broadcast from synchronous code via async loop"""
+    # Just a helper to run async code from sync places.
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -149,7 +128,7 @@ def broadcast_sync(message: dict):
         loop.run_until_complete(manager.broadcast(message))
 
 async def process_message(message: dict):
-    """Process and store message before broadcasting"""
+    # Saves the message to memory and sends it out.
     # Add to history
     history.append(message)
     if len(history) > MAX_HISTORY:
@@ -158,7 +137,7 @@ async def process_message(message: dict):
     await manager.broadcast(message)
 
 async def consume_kafka_messages():
-    """Background task to consume messages from Kafka"""
+    # Reads messages from Kafka in the background.
     try:
         from kafka import KafkaConsumer
         consumer = KafkaConsumer(
@@ -205,7 +184,24 @@ async def resume_simulation():
     simulation.resume()
     return {"status": "resumed"}
 
+@app.get("/api/status")
+async def get_status():
+    return {
+        "is_running": simulation.is_running,
+        "is_paused": simulation.is_paused,
+        "tasks_processed": simulation.tasks_processed,
+        "metrics": simulation.metrics
+    }
+
 @app.on_event("startup")
 async def startup_event():
+    # Initialize database
+    from backend.core.database import init_db
+    try:
+        await init_db()
+        logger.info("Database initialized")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {e}")
+
     # Start the continuous simulation engine
     asyncio.create_task(simulation.start())

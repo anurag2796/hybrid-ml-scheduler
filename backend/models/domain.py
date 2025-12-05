@@ -1,5 +1,5 @@
 """
-SQLAlchemy domain models for database tables.
+Database models (SQLAlchemy).
 """
 from sqlalchemy import Column, Integer, Float, String, DateTime, Text, Index, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
@@ -10,7 +10,7 @@ from backend.core.database import Base
 
 
 class Task(Base):
-    """Task model representing workload tasks."""
+    # Represents a task in the system.
     
     __tablename__ = "tasks"
     
@@ -36,7 +36,7 @@ class Task(Base):
 
 
 class SchedulerResult(Base):
-    """Results from scheduler executions."""
+    # Stores the results of a scheduler running a task.
     
     __tablename__ = "scheduler_results"
     
@@ -67,7 +67,7 @@ class SchedulerResult(Base):
 
 
 class Metric(Base):
-    """Aggregate metrics for schedulers over time."""
+    # Aggregated stats for schedulers (like total wins, avg time).
     
     __tablename__ = "metrics"
     
@@ -103,7 +103,7 @@ class Metric(Base):
 
 
 class TrainingData(Base):
-    """Historical training data for ML models."""
+    # Data used for training the ML models.
     
     __tablename__ = "training_data"
     
@@ -126,7 +126,7 @@ class TrainingData(Base):
 
 
 class SimulationState(Base):
-    """Current simulation state for persistence."""
+    # Keeps track of the simulation state (paused, running, etc).
     
     __tablename__ = "simulation_state"
     
