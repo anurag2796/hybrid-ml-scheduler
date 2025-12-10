@@ -243,9 +243,26 @@ class ContinuousSimulation:
         results['hybrid_ml'] = {**res, **self._calculate_metrics(res)}
         
         # --- 5. RL Agent ---
-        rl_frac = 1.0 
+        # Get action from RL Agent (Exploration vs Exploitation handled inside)
+        rl_action_dict = self.rl_scheduler.get_action(task)
+        rl_frac = rl_action_dict['gpu_fraction']
+        
         res = self.simulators['rl_agent'].simulate_task_execution(task, rl_frac)
-        results['rl_agent'] = {**res, **self._calculate_metrics(res)}
+        
+        # Calculate Reward based on actual execution
+        # We need the metrics to calculate reward (negative cost)
+        metrics = self._calculate_metrics(res)
+        
+        # Feedback to RL Agent (Observe and Learn)
+        # We pass the reward back 
+        # Reward = -(w*Time + (1-w)*Energy) (or similar logic inside scheduler)
+        self.rl_scheduler.observe(
+            task=task,
+            action=rl_action_dict['action'],
+            reward_metrics=metrics # Scheduler will calculate scalar reward
+        )
+        
+        results['rl_agent'] = {**res, **metrics}
         
         # --- 6. Oracle (Brute Force) ---
         best_time = float('inf')
