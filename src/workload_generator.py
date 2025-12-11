@@ -85,13 +85,27 @@ class WorkloadGenerator:
             inter_arrival = np.random.exponential(1.0 / arrival_rate)
             current_time += inter_arrival
             
-            # Randomly sample task characteristics from Uniform distributions
-            size = np.random.randint(task_size_range[0], task_size_range[1])
-            compute_intensity = np.random.uniform(
-                compute_intensity_range[0], 
-                compute_intensity_range[1]
-            )
-            memory = np.random.randint(memory_range[0], memory_range[1])
+            # 1. Task Size: Use Pareto distribution (Heavy-tailed)
+            # Many small tasks, few very large ones (realistic for HPC/Cloud)
+            shape = 1.5  # Pareto shape parameter (1.16 is roughly 80/20 rule)
+            size = (np.random.pareto(shape) + 1) * task_size_range[0]
+            size = int(min(size, task_size_range[1])) # Clip to max size
+            
+            # 2. Compute Intensity: Use Bimodal distribution
+            # Most tasks are either CPU-bound (low intensity) or GPU-bound (high intensity)
+            if np.random.random() < 0.3:
+                # CPU-bound peak
+                compute_intensity = np.random.normal(0.2, 0.1)
+            else:
+                # GPU-bound peak
+                compute_intensity = np.random.normal(0.8, 0.1)
+            compute_intensity = np.clip(compute_intensity, 0.05, 1.0) # Keep within bounds
+
+            # 3. Memory: Correlated with size (larger tasks usually need more memory)
+            # Add some noise so it's not a perfect correlation
+            base_memory = (size / task_size_range[1]) * memory_range[1]
+            noise = np.random.normal(0, memory_range[1] * 0.1)
+            memory = int(np.clip(base_memory + noise, memory_range[0], memory_range[1]))
             
             # Generate dependencies
             dependencies = []

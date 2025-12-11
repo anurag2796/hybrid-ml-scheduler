@@ -215,3 +215,14 @@ class OnlineScheduler:
         self.scheduled_tasks.clear()
         
         logger.info("Scheduler state reset")
+        
+    def randomize_resources(self):
+        """Randomize GPU states to simulate dynamic environment"""
+        import random
+        for gpu_state in self.gpu_states:
+            # Random load between 0.0 and 0.9
+            gpu_state.current_load = random.uniform(0.0, 0.9)
+            # Random memory availability
+            gpu_state.available_memory = random.uniform(500, gpu_state.total_memory)
+            # Random tasks count
+            gpu_state.tasks_running = random.randint(0, 10)

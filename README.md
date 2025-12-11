@@ -2,6 +2,15 @@
 
 > A real-time scheduler comparison system that optimizes heterogeneous GPU/CPU task scheduling using machine learning and reinforcement learning techniques.
 
+---
+
+### 📚 **Documentation Center**
+**For deep technical details, theory, and the "Textbook" guide:**
+*   [**📖 Project Wiki (v10.0 Ultimate Edition)**](PROJECT_WIKI_DOCUMENTATION.md) - *1000+ lines covering Theory, Code, and FAQs.*
+*   [**📄 PDF Manual**](PROJECT_WIKI_DOCUMENTATION.pdf) - *The printable version of the wiki.*
+
+---
+
 ## 🚀 Overview
 
 The Hybrid ML Scheduler is a simulation framework for comparing different task scheduling strategies in heterogeneous computing environments. It features:
@@ -10,6 +19,13 @@ The Hybrid ML Scheduler is a simulation framework for comparing different task s
 - **Live Dashboard**: Real-time WebSocket-based visualization of scheduler performance
 - **Online Learning**: Continuous model retraining based on accumulated execution data
 - **Comprehensive Metrics**: Time, energy consumption, and cost tracking for each scheduler
+
+### 🍳 The Concept: A "Kitchen" Metaphor
+To understand the complexity, imagine a restaurant kitchen:
+*   **4 Master Chefs (GPUs):** Fast but expensive ($$$).
+*   **1 Prep Cook (CPU):** Slow but cheap ($).
+*   **The Challenge:** Moving ingredients to a Chef takes time. Simple tasks (chopping an onion) are faster with the Prep Cook because you save the walk. Complex tasks (Soufflé) need the Chef.
+*   **Our Solution:** An **RL Agent** that learns to be the perfect Kitchen Manager, assigning tasks based on "Cooking Time" vs "Walking Time".
 
 ## 📊 Architecture
 
@@ -31,7 +47,7 @@ The Hybrid ML Scheduler is a simulation framework for comparing different task s
 │  │  • Metrics Collection & Broadcasting                  │   │
 │  │  • Model Retraining (every 50 tasks)                  │   │
 │  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+34 └─────────────────────────────────────────────────────────────┘
            │                    │                    │
     ┌──────▼──────┐     ┌──────▼──────┐    ┌───────▼────────┐
     │   Hybrid ML  │     │  RL Agent   │    │  Simple Rules  │
@@ -53,7 +69,7 @@ The Hybrid ML Scheduler is a simulation framework for comparing different task s
 
 ### Prerequisites
 
-- **Python 3.8+**
+- **Python 3.10+**
 - **Node.js 16+** (for dashboard)
 - **pip** and **npm**
 
@@ -113,16 +129,16 @@ Open **http://localhost:5173** in your browser to view the dashboard.
 
 ### Running Experiments Manually
 
-For offline experiments without the dashboard:
+For offline experiments without the dashboard (Scientific Mode):
 
 ```bash
-python main.py
+python scripts/run_heavy_simulation.py
 ```
 
-This runs a batch simulation and outputs:
-- Performance comparison charts
-- Detailed metrics CSV
-- Model training results
+This runs a batch simulation of 10,000 tasks and outputs:
+- **CDF Plots:** `data/results/plots/latency_cdf.png`
+- **Cost Analysis:** `data/results/plots/cost_comparison.png`
+- **Detailed Logs:** `data/results/heavy_simulation_report.csv`
 
 ## 📝 API Documentation
 
@@ -190,10 +206,6 @@ Run the test suite:
 ```bash
 # Backend tests
 pytest tests/
-
-# Frontend tests  
-cd dashboard
-npm test
 ```
 
 ## 📂 Project Structure
@@ -231,8 +243,8 @@ hybrid_ml_scheduler/
 | **Round Robin** | Alternating | 0.5 if task_id % 2 == 0, else 0.0 |
 | **Random** | Stochastic | Uniform random [0, 1] |
 | **Greedy** | Heuristic | Uses task.compute_intensity |
-| **Hybrid ML** | ML-Based | RandomForest prediction on task features |
-| **RL Agent** | Reinforcement Learning | DQN policy (currently simplified) |
+| **Hybrid ML** | ML-Based (RandomForest) | Predicts speedup using Size + Intensity |
+| **RL Agent** | Reinforcement Learning (DQN) | Learns Q-Values for discrete GPU allocations |
 | **Oracle** | Optimal | Grid search over 11 fractions [0, 0.1, ..., 1.0] |
 
 ## 🔧 Configuration
@@ -283,10 +295,5 @@ power = (gpu_frac * GPU_POWER) + ((1.0 - gpu_frac) * CPU_POWER)
 
 MIT License
 
-## 🤝 Contributing
-
-Contributions are welcome! Please submit issues and pull requests.
-
-## 📧 Contact
-
-For questions or support, please open an issue on GitHub.
+---
+**See `PROJECT_WIKI_DOCUMENTATION.md` for the full technical encyclopedia.**

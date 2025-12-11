@@ -35,11 +35,25 @@ def convert_md_to_pdf(source_md, output_pdf):
     #     f.write(full_html)
 
     # Convert to PDF
+    # Helper to fix image paths for xhtml2pdf
+    from urllib.parse import unquote
+    def link_callback(uri, rel):
+        # Decode URI (e.g. %20 -> space)
+        uri = unquote(uri)
+        
+        if not uri.startswith('http'):
+            # Convert relative path to absolute
+            abs_path = os.path.abspath(uri)
+            if os.path.exists(abs_path):
+                return abs_path
+        return uri
+
     with open(output_pdf, "wb") as result_file:
         pisa_status = pisa.CreatePDF(
             full_html,
             dest=result_file,
-            encoding='utf-8'
+            encoding='utf-8',
+            link_callback=link_callback
         )
 
     if pisa_status.err:
@@ -50,8 +64,8 @@ def convert_md_to_pdf(source_md, output_pdf):
     return True
 
 if __name__ == "__main__":
-    source = "PROJECT_DOCUMENTATION.md"
-    output = "PROJECT_DOCUMENTATION.pdf"
+    source = "PROJECT_WIKI_DOCUMENTATION.md"
+    output = "PROJECT_WIKI_DOCUMENTATION.pdf"
     
     if os.path.exists(source):
         convert_md_to_pdf(source, output)

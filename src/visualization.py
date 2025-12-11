@@ -28,10 +28,18 @@ def plot_comparison(results: Dict[str, Dict[str, float]],
     # 1. Makespan Comparison
     plt.figure(figsize=(10, 6))
     makespans = [results[s]['makespan'] for s in strategies]
-    bars = plt.bar(strategies, makespans, color=['#3498db', '#e74c3c', '#f1c40f', '#2ecc71', '#9b59b6'])
+    # Use distinct colors from cmap
+    colors = plt.cm.Set2(np.linspace(0, 1, len(strategies)))
+    bars = plt.bar(strategies, makespans, color=colors)
     
     plt.title('Total Execution Time (Makespan) by Strategy', fontsize=14)
     plt.ylabel('Time (seconds)', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    
+    # Add margin for labels
+    if makespans:
+        plt.ylim(0, max(makespans) * 1.15)
+        
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     
     # Add value labels
@@ -48,10 +56,15 @@ def plot_comparison(results: Dict[str, Dict[str, float]],
     # 2. Average Task Duration Comparison
     plt.figure(figsize=(10, 6))
     avg_times = [results[s]['avg_time'] for s in strategies]
-    bars = plt.bar(strategies, avg_times, color=['#3498db', '#e74c3c', '#f1c40f', '#2ecc71', '#9b59b6'])
+    bars = plt.bar(strategies, avg_times, color=colors)
     
     plt.title('Average Task Duration by Strategy', fontsize=14)
     plt.ylabel('Time (seconds)', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    
+    if avg_times:
+        plt.ylim(0, max(avg_times) * 1.15)
+        
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     
     for bar in bars:
@@ -66,14 +79,19 @@ def plot_comparison(results: Dict[str, Dict[str, float]],
     
     # 3. Speedup relative to Baseline (First strategy)
     baseline_makespan = makespans[0]
-    speedups = [baseline_makespan / m for m in makespans]
+    speedups = [baseline_makespan / (m + 1e-6) for m in makespans]
     
     plt.figure(figsize=(10, 6))
-    bars = plt.bar(strategies, speedups, color=['#95a5a6', '#e74c3c', '#f1c40f', '#2ecc71', '#9b59b6'])
+    bars = plt.bar(strategies, speedups, color=colors)
     
     plt.title(f'Speedup Factor (relative to {strategies[0]})', fontsize=14)
     plt.ylabel('Speedup Factor (Higher is Better)', fontsize=12)
     plt.axhline(y=1.0, color='k', linestyle='-', alpha=0.3)
+    plt.xticks(rotation=45, ha='right')
+    
+    if speedups:
+        plt.ylim(0, max(speedups) * 1.15)
+        
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     
     for bar in bars:
@@ -91,10 +109,6 @@ def plot_comparison(results: Dict[str, Dict[str, float]],
 def plot_workload_characteristics(tasks: List[Dict], output_dir: str = "data/results/plots"):
     """
     Plot characteristics of the generated workload
-    
-    Args:
-        tasks: List of task dictionaries or Task objects
-        output_dir: Directory to save plots
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -177,3 +191,74 @@ def plot_workload_characteristics(tasks: List[Dict], output_dir: str = "data/res
             logger.warning(f"Failed to plot dependency graph: {e}")
 
     logger.info(f"Workload plots saved to {output_path}")
+
+def plot_cost_analysis(results: Dict[str, Dict[str, float]], output_dir: str = "data/results/plots"):
+    """
+    Plot total cost comparison.
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    strategies = list(results.keys())
+    costs = [results[s].get('total_cost', 0) for s in strategies]
+    
+    plt.figure(figsize=(10, 6))
+    colors = plt.cm.Set2(np.linspace(0, 1, len(strategies)))
+    bars = plt.bar(strategies, costs, color=colors)
+    
+    plt.title('Total Operational Cost by Strategy', fontsize=14)
+    plt.ylabel('Cost (Abstract Units)', fontsize=12)
+    plt.xticks(rotation=45, ha='right')
+    
+    if costs:
+        plt.ylim(0, max(costs) * 1.15)
+        
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    for bar in bars:
+        height = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width()/2., height,
+                f'{height:.2f}',
+                ha='center', va='bottom')
+                
+    plt.tight_layout()
+    plt.savefig(output_path / 'cost_comparison.png', dpi=300)
+    plt.close()
+
+
+def plot_latency_distribution(latencies_dict: Dict[str, List[float]], output_dir: str = "data/results/plots"):
+    """
+    Plot latency distribution (CDF and Boxplot).
+    """
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    
+    # 1. CDF Plot
+    plt.figure(figsize=(10, 6))
+    for strategy, latencies in latencies_dict.items():
+        sorted_data = np.sort(latencies)
+        yvals = np.arange(len(sorted_data)) / float(len(sorted_data) - 1)
+        plt.plot(sorted_data, yvals, label=strategy, linewidth=2)
+        
+    plt.title('Latency CDF (Cumulative Distribution Function)', fontsize=14)
+    plt.xlabel('Latency (seconds)', fontsize=12)
+    plt.ylabel('Probability', fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(output_path / 'latency_cdf.png', dpi=300)
+    plt.close()
+    
+    # 2. Box Plot
+    plt.figure(figsize=(10, 6))
+    data_to_plot = [latencies_dict[s] for s in latencies_dict.keys()]
+    labels = list(latencies_dict.keys())
+    
+    plt.boxplot(data_to_plot, labels=labels, patch_artist=True)
+    plt.title('Latency Distribution (Box Plot)', fontsize=14)
+    plt.ylabel('Latency (seconds)', fontsize=12)
+    plt.grid(axis='y', linestyle='--', alpha=0.5)
+    plt.tight_layout()
+    plt.savefig(output_path / 'latency_boxplot.png', dpi=300)
+    plt.close()
+

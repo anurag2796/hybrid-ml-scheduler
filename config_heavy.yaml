@@ -1,0 +1,48 @@
+# Configuration for Heavy Workload Simulation
+
+hardware:
+  device: "mps"  # Metal Performance Shaders for M4 Max
+  use_cpu_fallback: true
+  num_virtual_gpus: 4
+  
+profiling:
+  matrix_sizes: [256, 512, 1024, 2048]
+  iterations: 5
+  save_profiles: true
+  profile_output: "data/profiles/hardware_profile.json"
+
+workload_generation:
+  num_tasks: 1000
+  simulation_tasks: 100
+  rl_training_tasks: 1000 # Increased for better learning
+  evaluation_tasks: 10000 # 10k tasks as requested
+  task_size_range: [100, 5000] # Slightly smaller max size to keep runtime reasonable but still heavy
+  compute_intensity_range: [0.6, 1.0] # Biased towards heavy compute
+  memory_range: [100, 10000] # Wide memory range
+  arrival_rate: 200  # Increased arrival rate for pressure
+  seed: 42
+
+ml_models:
+  model_type: "random_forest"
+  random_forest:
+    n_estimators: 100
+    max_depth: 15
+    min_samples_split: 5
+    n_jobs: -1
+  
+  train_test_split: 0.8
+  validation_split: 0.1
+  
+scheduling:
+  batch_size: 100 # Larger batches
+  prediction_threshold: 0.8
+  load_balance_weight: 0.3
+  
+evaluation:
+  baseline_strategies: ["round_robin", "random", "greedy"]
+  metrics: ["makespan", "throughput", "load_balance", "utilization"]
+  
+output:
+  results_dir: "data/results/"
+  plots_dir: "data/results/plots/"
+  model_dir: "models/"

@@ -19,7 +19,6 @@ from src.simulator import VirtualMultiGPU
 from src.online_scheduler import OnlineScheduler
 from src.offline_trainer import OfflineTrainer
 from src.dqn_scheduler import DQNScheduler
-from src.ml_models import RandomForestPredictor
 
 class ContinuousSimulation:
     # Controls the whole simulation loop.

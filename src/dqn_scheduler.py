@@ -11,7 +11,6 @@ import random
 from collections import deque
 from typing import Dict, List, Tuple, Any
 from loguru import logger
-import pickle
 
 from .workload_generator import Task
 from .profiler import HardwareProfiler
@@ -40,7 +39,6 @@ class DQN(nn.Module):
             x = x.unsqueeze(0)
             
         x = self.relu(self.fc1(x))
-        # x = self.bn1(x) # Skip BN for online single-sample inference stability or use eval mode
         x = self.relu(self.fc2(x))
         
         val = self.value_stream(x)
@@ -166,13 +164,18 @@ class DQNScheduler(OnlineScheduler):
         Receive feedback from the environment (Simulator) and learn.
         """
         # 1. Calculate Reward
-        # Minimize Cost => Maximize Negative Cost
-        # Cost = (1-w)*Time + w*Energy
+        # GOAL: Balance Time and Energy.
+        # Reward Function: R = -Cost
+        # Cost = (1-w) * Normalized_Time + w * Normalized_Energy
+        #
+        # Note: We do NOT include financial cost ($) in the reward function here,
+        # so the agent does not care about the price of GPU vs CPU.
         
         time_taken = reward_metrics['time']
         energy_used = reward_metrics['energy']
         
-        # Normalize for numerical stability
+        # Normalize for numerical stability (DQN learns better with rewards close to 0-1 range)
+        # Using approximated max values (10s and 500J) based on workload config.
         norm_time = time_taken / 10.0 
         norm_energy = energy_used / 500.0
         
@@ -182,22 +185,12 @@ class DQNScheduler(OnlineScheduler):
         # 2. Store in Memory
         current_state = self._get_state_vector(task)
         
-        # Simplified Next State: Since tasks are independent IID in this generator,
-        # the next state is just a new random task.
-        # Ideally, we'd pass the *next* task's state here, but we can treat this as a terminal state for the task.
-        # Or better: Standard Q-learning assumes s' is the state the agent ENDS UP in.
-        # But here the agent stays in the "Scheduler" state and receives a NEW task.
-        # So s' is effectively the state vector of the NEXT task.
-        # For simplicity in this IID setting, we can set done=True effectively, 
-        # or use the current state as a proxy if we want to learn generic value of state.
+        # Since tasks are independent (IID), the next state is effectively a new random task.
+        # We treat this as a terminal state for the scheduling "episode" of one task.
+        next_state = np.zeros_like(current_state) # Dummy next state
+        done = True
         
-        # Let's treat each scheduling decision as an episode of length 1 for now (Bandit-like but with state),
-        # or assume s' is 0 vector (terminal).
-        # However, to use the Q-learning update rule properly with gamma, we usually need s'.
-        # Since the next task is random, V(s') is just expected value of random tasks.
-        
-        next_state = np.zeros_like(current_state) # Dummy
-        done = True # Treat as terminal for this specific task
+
         
         self.memory.push(current_state, action, reward, next_state, done)
         
@@ -272,3 +265,49 @@ class DQNScheduler(OnlineScheduler):
             'scheduled_time': 0,
             'action': action_dict['action']
         }
+
+    def pretrain(self, tasks: List[Task], epochs: int = 10):
+        """
+        Pre-train the agent using a simple heuristic to warm-start the policy.
+        Heuristic: High Compute Intensity (> 0.5) -> GPU, else CPU.
+        """
+        logger.info(f"Pre-training DQN on {len(tasks)} tasks for {epochs} epochs...")
+        
+        # Fill Replay Buffer with Heuristic Demonstrations
+        for task in tasks:
+            state = self._get_state_vector(task)
+            
+            # Heuristic Labeling
+            # High intensity -> GPU (Action 1..N)
+            # Low intensity -> CPU (Action 0)
+            if task.compute_intensity > 0.5:
+                # Randomly assign to one of the GPUs
+                action = random.randint(1, self.action_dim - 1)
+            else:
+                action = 0
+                
+            # Fake Reward (Positive for following heuristic)
+            reward = 1.0 
+            
+            next_state = np.zeros_like(state)
+            done = True
+            
+            self.memory.push(state, action, reward, next_state, done)
+            
+        # Training Loop
+        initial_epsilon = self.epsilon
+        self.epsilon = 0.5 # Allow some exploration of the buffer? No, off-policy.
+        
+        for epoch in range(epochs):
+            total_loss = 0
+            # Train for a few batches per epoch
+            steps = len(tasks) // self.batch_size
+            for _ in range(steps):
+                loss = self.train_step()
+                total_loss += loss
+            
+            if epoch % 10 == 0:
+                logger.debug(f"Pretrain Epoch {epoch}: Avg Loss = {total_loss/steps:.4f}")
+                
+        self.epsilon = initial_epsilon
+        logger.info("Pre-training complete.")
