@@ -85,6 +85,17 @@ class ContinuousSimulation:
         self.rl_scheduler = DQNScheduler(self.num_gpus)
         # Load RL model if exists? For now start fresh or use epsilon decay
         
+        # --- FIX: Pre-train RL Agent to avoid high initial latency ---
+        try:
+            logger.info("Pre-training RL Agent to fix initial performance...")
+            # Generate 1000 tasks for "Heuristic Pre-training"
+            # This teaches the agent basic rules (Big Math -> GPU, Tiny script -> CPU)
+            pretrain_tasks = self.workload_generator.generate_workload(num_tasks=1000)
+            self.rl_scheduler.pretrain(pretrain_tasks, epochs=5)
+            logger.info("RL Agent pre-training complete.")
+        except Exception as e:
+            logger.error(f"Failed to pre-train RL agent: {e}")
+        
         # Metrics Storage
         self.metrics = {k: {'total_time': 0.0, 'tasks': 0} for k in self.simulators.keys()}
 

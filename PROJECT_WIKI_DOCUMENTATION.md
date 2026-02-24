@@ -156,11 +156,60 @@ useEffect(() => {
 ```
 *   **Optimization:** We slice the data array to the last 50 points to prevent memory leaks in long-running simulations.
 
-### Visualization Widgets
-1.  **Global Comparison Bar Chart:** Shows "Avg Time" for all schedulers side-by-side.
-2.  **Real-Time Utilization Area Chart:** A moving wave showing cluster load (0-100%).
-3.  **Radar Chart (Spider Plot):** Compares the selected scheduler vs the "Oracle" on 3 axes: Time, Energy, Cost.
-4.  **Scheduler Grid View:** A customizable grid where users can drag-and-drop metric cards (`Average Latency`, `Energy/Task`).
+### Visualization Widgets (The "Eyes" of the Operator)
+
+We have designed 8 specialized widgets to visualize different aspects of the scheduling problem.
+
+#### 1. **Global Comparison Bar Chart (The "Race")**
+*   **Visual:** A horizontal bar chart race.
+*   **Purpose:** The primary leaderboard. It shows the **Average Execution Time per Task** for each scheduler.
+*   **Interpretation:** Shorter bars are better. The "Oracle" bar sets the impossible standard. The "RL Agent" should be chasing the Oracle. If "Round Robin" is beating "RL Agent", something is wrong.
+
+#### 2. **Real-Time Utilization Area Chart (The "Pulse")**
+*   **Visual:** A flowing, stacked area chart.
+*   **Purpose:** Shows the instantaneous load on the cluster (Combined CPU + GPU usage) over the last 60 seconds.
+*   **Interpretation:**
+    *   **Flat Line (0%):** System is idle/broken.
+    *   **Flat Line (100%):** System is saturated (good for throughput, bad for latency).
+    *   **Wavy:** Healthy variation in workload.
+
+#### 3. **Radar Chart (The "Spider")**
+*   **Visual:** A pentagonal or triangular radar plot.
+*   **Purpose:** Multi-dimensional comparison of the *currently selected* scheduler against the "Oracle" baseline.
+*   **Axes:**
+    *   **Time:** Lower is better.
+    *   **Energy:** Lower is better.
+    *   **Cost:** Lower is better.
+*   **Interpretation:** You want your scheduler's shape to be *inside* or *perfectly overlapping* the Oracle's shape. If it spikes out on "Cost", your agent is spending too much money.
+
+#### 4. **Historical Performance Table (The "Ledger")**
+*   **Visual:** A sortable data grid.
+*   **Purpose:** Displays raw numerical data for the last N tasks.
+*   **Columns:** Task ID, Assigned Scheduler, Time, Energy, Cost.
+*   **Interpretation:** useful for auditing specific "bad decisions" where an agent might have spiked execution time.
+
+#### 5. **Task Distribution Histogram (The "Workload")**
+*   **Visual:** A bar chart showing the frequency of task sizes.
+*   **Purpose:** Verifies that the workload generator is creating a diverse mix of tasks (Small, Medium, Large).
+*   **Interpretation:** Should look like a "Long Tail" (many small tasks, few huge ones).
+
+#### 6. **Win/Loss Matrix (The "Scoreboard")**
+*   **Visual:** A heatmap grid.
+*   **Purpose:** Shows how often Scheduler A beats Scheduler B.
+*   **Interpretation:** Green cells mean "Row wins against Column". A dominant RL agent should be green across its entire row.
+
+#### 7. **Correlation Matrix (The "Insights")**
+*   **Visual:** A color-coded heatmap of statistics.
+*   **Purpose:** Reveals relationships between variables (e.g., "Does `Task Size` correlate with `Execution Time`?").
+*   **Interpretation:**
+    *   **+1.0 (Red):** Perfect positive correlation.
+    *   **-1.0 (Blue):** Perfect negative correlation.
+    *   **0.0 (Grey):** No relationship.
+
+#### 8. **Live Log Stream (The "Console")**
+*   **Visual:** A scrolling terminal-like window.
+*   **Purpose:** Shows raw text logs from the backend (e.g., "Task 105 assigned to GPU 3").
+*   **Interpretation:** Essential for catching specific logic errors or connection drops.
 
 ## 5.3 UX Design Decisions
 *   **Glassmorphism:** We used semi-transparent backgrounds (`bg-black/20 backdrop-blur`) to create a futuristic "Sci-Fi" aesthetic suitable for an AI project.

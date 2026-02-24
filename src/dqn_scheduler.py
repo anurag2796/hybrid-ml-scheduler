@@ -68,9 +68,9 @@ class DQNScheduler(OnlineScheduler):
     Now supports interactive learning loop.
     """
     
-    def __init__(self, num_gpus: int = 4, energy_weight: float = 0.5, 
+    def __init__(self, num_gpus: int = 4, energy_weight: float = 0.2, 
                  learning_rate: float = 0.0001, gamma: float = 0.99, 
-                 epsilon_start: float = 1.0, epsilon_end: float = 0.05, 
+                 epsilon_start: float = 0.5, epsilon_end: float = 0.05, 
                  epsilon_decay: float = 0.9995, buffer_size: int = 50000,
                  batch_size: int = 64, target_update: int = 50,
                  monitor_callback=None):
@@ -102,8 +102,12 @@ class DQNScheduler(OnlineScheduler):
         # Total = 3
         self.state_dim = 3
         
-        # Action Dimension: CPU + Num GPUs
-        self.action_dim = 1 + num_gpus
+        
+        # Action Dimension: 
+        # We use DISCRETE actions to represent CONTINUOUS fractions.
+        # Actions: 0=0.0, 1=0.2, 2=0.4, 3=0.6, 4=0.8, 5=1.0
+        self.action_bins = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
+        self.action_dim = len(self.action_bins)
         
         # Networks
         self.device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -115,7 +119,7 @@ class DQNScheduler(OnlineScheduler):
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=learning_rate)
         self.memory = ReplayBuffer(buffer_size)
         
-        logger.info(f"DQNScheduler initialized on {self.device} with Enhanced Architecture")
+        logger.info(f"DQNScheduler initialized on {self.device} with Fractional Actions")
 
     def _get_state_vector(self, task: Task) -> np.ndarray:
         """
@@ -144,13 +148,18 @@ class DQNScheduler(OnlineScheduler):
                 q_values = self.policy_net(state_tensor)
                 action = q_values.argmax().item()
                 
-        # Decode Action
-        if action == 0: # CPU
-            gpu_fraction = 0.0
+        # Decode Action (Discrete Bin -> Continuous Fraction)
+        gpu_fraction = self.action_bins[action]
+        
+        # GPU ID Selection (Load Balancing Heuristic)
+        # The RL agent decides "How much offload", the scheduler decides "Where".
+        # We use a simple heuristic: pick gpu_id based on a hash if we don't have load info,
+        # or -1 if Fraction is 0.0.
+        if gpu_fraction == 0.0:
             gpu_id = -1
-        else: # GPU
-            gpu_fraction = 1.0 # Simple discrete choice: Full GPU
-            gpu_id = action - 1
+        else:
+            # Round Robin-ish based on task ID for stability
+            gpu_id = task.task_id % self.num_gpus
             
         return {
             'action': action,
@@ -277,14 +286,24 @@ class DQNScheduler(OnlineScheduler):
         for task in tasks:
             state = self._get_state_vector(task)
             
-            # Heuristic Labeling
-            # High intensity -> GPU (Action 1..N)
-            # Low intensity -> CPU (Action 0)
-            if task.compute_intensity > 0.5:
-                # Randomly assign to one of the GPUs
-                action = random.randint(1, self.action_dim - 1)
+            # Heuristic Labeling (Improved for Time)
+            # We want to match the Oracle's behavior approximately.
+            # Small Task -> 0.0
+            # Big Task + High Intensity -> 1.0
+            # Medium -> 0.4 or 0.6
+            
+            if task.size < 500:
+                target_frac = 0.0
+            elif task.compute_intensity > 0.8:
+                target_frac = 1.0
+            elif task.compute_intensity > 0.5:
+                # Linear mapping for medium intensity
+                target_frac = 0.6
             else:
-                action = 0
+                target_frac = 0.0
+            
+            # Find closest bin index
+            action = min(range(len(self.action_bins)), key=lambda i: abs(self.action_bins[i]-target_frac))
                 
             # Fake Reward (Positive for following heuristic)
             reward = 1.0 
@@ -302,6 +321,13 @@ class DQNScheduler(OnlineScheduler):
             total_loss = 0
             # Train for a few batches per epoch
             steps = len(tasks) // self.batch_size
+            if steps == 0 and len(self.memory) > self.batch_size:
+                steps = len(self.memory) // self.batch_size
+            
+            if steps == 0:
+                 logger.warning("Not enough data to train!")
+                 break
+
             for _ in range(steps):
                 loss = self.train_step()
                 total_loss += loss

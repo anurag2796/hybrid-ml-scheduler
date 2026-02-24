@@ -58,7 +58,7 @@ async def main():
     trainer, _ = run_offline_training_phase(config, wg)
     
     # Phase 4.5: RL Training (Standard)
-    rl_scheduler = run_rl_training_phase(config)
+    rl_scheduler = run_rl_training_phase(config, trainer)
     
     # Phase 5: Heavy Evaluation & DB Population
     logger.info("\n" + "="*80)

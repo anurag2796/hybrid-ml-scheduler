@@ -6,8 +6,9 @@
 
 ### 📚 **Documentation Center**
 **For deep technical details, theory, and the "Textbook" guide:**
-*   [**📖 Project Wiki (v10.0 Ultimate Edition)**](PROJECT_WIKI_DOCUMENTATION.md) - *1000+ lines covering Theory, Code, and FAQs.*
-*   [**📄 PDF Manual**](PROJECT_WIKI_DOCUMENTATION.pdf) - *The printable version of the wiki.*
+*   [**📖 Project Wiki (Modular Documentation)**](docs/wiki/README.md) - *Comprehensive guides covering Architecture, Code, Data Workflow, and FAQs.*
+*   [**📄 Legacy Project Wiki (v10.0 Ultimate Edition)**](PROJECT_WIKI_DOCUMENTATION.md) - *Legacy 1000+ lines monolithic file.*
+*   [**📄 PDF Manual**](PROJECT_WIKI_DOCUMENTATION.pdf) - *The printable version of the legacy wiki.*
 
 ---
 
@@ -296,4 +297,4 @@ power = (gpu_frac * GPU_POWER) + ((1.0 - gpu_frac) * CPU_POWER)
 MIT License
 
 ---
-**See `PROJECT_WIKI_DOCUMENTATION.md` for the full technical encyclopedia.**
+**See [`docs/wiki/README.md`](docs/wiki/README.md) for the full modular technical encyclopedia.**

@@ -150,7 +150,7 @@ def run_online_scheduling_phase(config: dict, trainer: OfflineTrainer):
     return scheduler, decisions
 
 
-def run_rl_training_phase(config: dict):
+def run_rl_training_phase(config: dict, trainer: OfflineTrainer = None):
     """Phase 4.5: RL Scheduler Training"""
     logger.info("\n" + "="*80)
     logger.info("PHASE 4.5: RL SCHEDULER TRAINING")
@@ -162,7 +162,56 @@ def run_rl_training_phase(config: dict):
         energy_weight=0.0 # Pure Performance
     )
     
-    # Generate training workload for RL
+    # Generate Imitation Learning Data (Teacher Student)
+    logger.info("Generating pre-training data (Imitation Learning)...")
+    pretrain_wg = WorkloadGenerator(seed=42)
+    pretrain_tasks = pretrain_wg.generate_workload(
+        num_tasks=10000,
+        arrival_rate=config['workload_generation']['arrival_rate'],
+        task_size_range=tuple(config['workload_generation']['task_size_range']),
+        compute_intensity_range=tuple(config['workload_generation']['compute_intensity_range']),
+        memory_range=tuple(config['workload_generation']['memory_range'])
+    )
+    
+    # Teacher Labeling
+    if trainer and hasattr(trainer, 'model'):
+        logger.info("Teacher (Hybrid ML) found! Generating optimal labels...")
+        count = 0
+        for task in pretrain_tasks:
+            # 1. Teacher Prediction
+            features = pd.DataFrame([{
+                'size': task.size,
+                'compute_intensity': task.compute_intensity,
+                'memory_required': task.memory_required,
+                'memory_per_size': task.memory_required / (task.size + 1),
+                'compute_to_memory': task.compute_intensity / (task.memory_required + 1),
+            }])
+            teacher_fraction = trainer.model.predict(features)[0]
+            teacher_fraction = max(0.0, min(1.0, teacher_fraction))
+            
+            # 2. Map to Action Bin
+            action_bins = rl_scheduler.action_bins
+            action = min(range(len(action_bins)), key=lambda i: abs(action_bins[i]-teacher_fraction))
+            
+            # 3. Push to Buffer
+            state = rl_scheduler._get_state_vector(task)
+            reward = 1.0 # Strong positive reinforcement for copying teacher
+            next_state = list(state) # Dummy
+            done = True
+            
+            rl_scheduler.memory.push(state, action, reward, next_state, done)
+            count += 1
+        logger.info(f"Filled buffer with {count} teacher demonstrations.")
+        
+        # Train on this buffer
+        rl_scheduler.pretrain([], epochs=100)
+        
+    else:
+        logger.info("No Teacher found. Using Heuristic.")
+        rl_scheduler.pretrain(pretrain_tasks, epochs=100)
+    
+    
+    # Generate training workload for RL (Online)
     # Needs many tasks to learn
     train_wg = WorkloadGenerator(seed=101)
     train_tasks = train_wg.generate_workload(
@@ -173,27 +222,31 @@ def run_rl_training_phase(config: dict):
         memory_range=tuple(config['workload_generation']['memory_range'])
     )
     
-    # Pre-train (Supervised Learning)
-    logger.info("Generating pre-training data...")
-    pretrain_wg = WorkloadGenerator(seed=42)
-    pretrain_tasks = pretrain_wg.generate_workload(
-        num_tasks=5000,
-        arrival_rate=config['workload_generation']['arrival_rate'],
-        task_size_range=tuple(config['workload_generation']['task_size_range']),
-        compute_intensity_range=tuple(config['workload_generation']['compute_intensity_range']),
-        memory_range=tuple(config['workload_generation']['memory_range'])
-    )
-    rl_scheduler.pretrain(pretrain_tasks, epochs=50)
-    
     # Lower epsilon to preserve pre-trained knowledge
     rl_scheduler.epsilon = 0.1
     logger.info(f"Epsilon set to {rl_scheduler.epsilon} for fine-tuning")
 
     # Train (Online Learning)
     logger.info("Training RL agent (Online)...")
+    train_simulator = VirtualMultiGPU(num_gpus=config['hardware']['num_virtual_gpus'])
+    
     for task in train_tasks:
-        rl_scheduler.randomize_resources()
-        rl_scheduler.schedule_task(task)
+        rl_scheduler.randomize_resources() # Noise
+        
+        # 1. Get Action
+        decision = rl_scheduler.get_action(task)
+        action = decision['action']
+        gpu_fraction = decision['gpu_fraction']
+        
+        # 2. Simulate to get Feedback
+        result = train_simulator.simulate_task_execution(task, gpu_fraction)
+        
+        # 3. Observe and Learn
+        reward_metrics = {
+            'time': result['actual_time'],
+            'energy': result['energy']
+        }
+        rl_scheduler.observe(task, action, reward_metrics)
         
     logger.info(f"RL Training complete. Final Epsilon: {rl_scheduler.epsilon:.4f}")
     
